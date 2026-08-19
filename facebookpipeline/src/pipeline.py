@@ -1,7 +1,8 @@
 """
-Main entrypoint: pulls Instagram media + insights, reattaches manual
-classifications, upserts Instagram_Master, marks vanished posts, and
-appends today's Instagram_Insights_History snapshot.
+Main entrypoint: pulls Facebook Page videos + insights, reattaches manual
+classifications, upserts Facebook_Master, marks vanished videos, appends
+today's Facebook_Insights_History snapshot, and mirrors into the shared
+cross-platform content layer for cross-platform matching.
 
 Run:  python -m src.pipeline
 """
@@ -11,12 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import bigquery_store, suggestions, transform
-from .graph_client import GraphAPIError, InstagramGraphClient, TokenExpiredError
+from .graph_client import FacebookGraphClient, GraphAPIError, TokenExpiredError
 
-# Repo root (two levels up from this file: src/ -> instagramanalyticspipeline/
-# -> repo root) so the shared cross-platform content layer is importable
-# both in local dev (`cd instagramanalyticspipeline && python -m src.pipeline`)
-# and from the Docker image, which mirrors this same layout under /app.
+# See instagramanalyticspipeline/src/pipeline.py for why this path math:
+# src/ -> facebookpipeline/ -> repo root, which also contains shared/.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -25,34 +24,33 @@ log = logging.getLogger(__name__)
 
 
 def run() -> int:
-    client = InstagramGraphClient()
+    client = FacebookGraphClient()
 
     try:
-        account_info = client.get_account_info()
+        page_info = client.get_page_info()
     except TokenExpiredError as e:
         log.error("Fatal: %s", e)
         return 1
 
-    log.info("Fetching media list for @%s ...", account_info.get("username"))
+    log.info("Fetching video list for Page %s ...", page_info.get("name"))
     try:
-        media_list = list(client.get_all_media_ids())
+        video_list = list(client.get_all_video_ids())
     except TokenExpiredError as e:
         log.error("Fatal: %s", e)
         return 1
     except GraphAPIError as e:
-        log.error("Fatal: could not list media: %s", e)
+        log.error("Fatal: could not list videos: %s", e)
         return 1
 
-    if not media_list:
-        log.warning("No media returned for this account -- nothing to do.")
+    if not video_list:
+        log.warning("No videos returned for this Page -- nothing to do.")
         return 0
 
-    media_ids = [m["id"] for m in media_list]
-    reel_count = sum(1 for m in media_list if m.get("media_product_type") == "REELS")
-    log.info("Found %d media items (%d Reels).", len(media_ids), reel_count)
+    video_ids = [v["id"] for v in video_list]
+    log.info("Found %d videos.", len(video_ids))
 
-    details = client.get_media_details(media_ids)
-    insights = client.get_media_insights(media_list)
+    details = client.get_video_details(video_ids)
+    insights = client.get_video_insights(video_ids)
 
     bq_client = bigquery_store.get_client()
     bigquery_store.ensure_schema(bq_client)
@@ -60,48 +58,38 @@ def run() -> int:
     brand_map = suggestions.load_brand_keywords()
 
     rows = []
-    failed_post_ids = []
+    failed_video_ids = []
 
-    for item in media_list:
-        post_id = item["id"]
+    for video_id in video_ids:
         try:
-            detail = details.get(post_id)
+            detail = details.get(video_id)
             if detail is None:
-                log.warning("Skipping Post_ID=%s: no media detail available.", post_id)
-                failed_post_ids.append(post_id)
+                log.warning("Skipping Video_ID=%s: no video detail available.", video_id)
+                failed_video_ids.append(video_id)
                 continue
 
-            collaborators = []
-            if item.get("media_product_type") == "REELS":
-                collaborators = client.get_collaborators(post_id)
-
             row = transform.build_master_row(
-                media_detail=detail,
-                insights=insights.get(post_id),
-                collaborators=collaborators,
-                account_info=account_info,
+                video_detail=detail,
+                insights=insights.get(video_id),
+                page_info=page_info,
             )
 
-            existing = classifications.get(post_id, {})
+            existing = classifications.get(video_id, {})
             row["Partnership"] = existing.get("Partnership") or "Unclassified"
             row["Content_Type"] = existing.get("Content_Type") or "Unclassified"
             row["Suggested_Partnership"] = suggestions.suggest_partnership(
-                detail.get("caption"), collaborators, brand_map
+                detail.get("description"), brand_map
             )
-            # User-owned free-text fields: only meaningful default on first
-            # INSERT -- the MERGE never overwrites them on existing rows.
-            row["Data_Comment"] = None
-            row["Data"] = None
 
             rows.append(row)
         except TokenExpiredError:
             raise
-        except Exception as e:  # noqa: BLE001 -- one bad post must not kill the run
-            log.error("Failed to process Post_ID=%s: %s", post_id, e)
-            failed_post_ids.append(post_id)
+        except Exception as e:  # noqa: BLE001 -- one bad video must not kill the run
+            log.error("Failed to process Video_ID=%s: %s", video_id, e)
+            failed_video_ids.append(video_id)
 
     bigquery_store.upsert_master_rows(bq_client, rows)
-    bigquery_store.mark_missing_as_deleted(bq_client, [r["Post_ID"] for r in rows])
+    bigquery_store.mark_missing_as_deleted(bq_client, [r["Video_ID"] for r in rows])
     _sync_to_shared_content_layer(rows)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()
@@ -111,23 +99,19 @@ def run() -> int:
     log.info(
         "Run complete: %d upserted, %d failed. Snapshot date: %s.",
         len(rows),
-        len(failed_post_ids),
+        len(failed_video_ids),
         snapshot_date,
     )
-    if failed_post_ids:
-        log.warning("Failed Post_IDs: %s", ", ".join(failed_post_ids))
+    if failed_video_ids:
+        log.warning("Failed Video_IDs: %s", ", ".join(failed_video_ids))
 
     return 0
 
 
 def _sync_to_shared_content_layer(rows: list) -> None:
-    """Mirrors this run's rows into the shared cross-platform content_items
-    table and runs auto-matching over whatever's newly ungrouped, so this
-    account's posts can be linked to the same content on YouTube/TikTok/
-    Facebook. Best-effort: a failure here (e.g. the shared dataset isn't
-    provisioned yet) must never fail the Instagram-only ingestion that
-    already succeeded above.
-    """
+    """See instagramanalyticspipeline/src/pipeline.py's twin of this
+    function for the full rationale -- best-effort, never fails this
+    pipeline's own successful Facebook ingestion."""
     try:
         from shared.src import content_store, matching
     except ImportError:
@@ -150,7 +134,7 @@ def _sync_to_shared_content_layer(rows: list) -> None:
                     match_method="auto",
                     match_confidence=candidate["confidence"],
                     confirmed=candidate["auto_confirm"],
-                    updated_by="instagram_pipeline",
+                    updated_by="facebook_pipeline",
                 )
             log.info("Cross-platform sync: %d candidate group(s) from this run.", len(candidates))
     except Exception as e:  # noqa: BLE001 -- shared-layer issues must not fail this pipeline

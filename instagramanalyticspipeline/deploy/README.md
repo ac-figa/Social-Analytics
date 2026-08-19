@@ -42,8 +42,19 @@ gcloud secrets add-iam-policy-binding meta-access-token \
 
 ## 3. Build and push the image
 
+The Dockerfile now lives in a subdirectory and the build needs the **repo
+root** as its context (to bundle the shared cross-platform content layer
+alongside this pipeline), so `gcloud builds submit --tag` (which only
+looks for a Dockerfile at the source root) no longer applies directly --
+build and push with plain `docker` instead, from the repo root:
+
 ```bash
-gcloud builds submit --tag "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/ig-pipeline:latest"
+gcloud auth configure-docker "${REGION}-docker.pkg.dev"
+
+docker build -f instagramanalyticspipeline/Dockerfile \
+  -t "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/ig-pipeline:latest" .
+
+docker push "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/ig-pipeline:latest"
 ```
 
 ## 4. Create the Cloud Run Job

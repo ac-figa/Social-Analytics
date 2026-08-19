@@ -86,6 +86,32 @@ def build_master_row(
     }
 
 
+def to_content_item(master_row: dict) -> dict:
+    """Normalizes an Instagram_Master row into the shared cross-platform
+    content_items shape (see shared/src/content_store.py). Called once per
+    row, after build_master_row -- this never re-derives fields, only
+    re-maps names/units so YouTube/TikTok/Facebook rows line up for
+    matching and partner reporting."""
+    return {
+        "Content_ID": f"instagram:{master_row['Post_ID']}",
+        "Platform": "Instagram",
+        "Platform_Post_ID": master_row["Post_ID"],
+        "Account_Username": master_row.get("Account_Username"),
+        "Caption": master_row.get("Description"),
+        "Publish_Date": master_row.get("Publish_Date"),
+        "Permalink": master_row.get("Permalink"),
+        "Post_Type": master_row.get("Post_Type"),
+        "Thumbnail_URL": None,  # not fetched by this pipeline
+        "Views": master_row.get("Views"),
+        "Likes": master_row.get("Likes"),
+        "Comments": master_row.get("Comments"),
+        "Shares": master_row.get("Shares"),
+        "Saves": master_row.get("Saves"),
+        "API_Status": master_row.get("API_Status"),
+        "Last_Synced_At": master_row.get("Last_Synced_At"),
+    }
+
+
 def build_history_row(master_row: dict, snapshot_date: str) -> dict:
     """Built from an already-assembled Instagram_Master row so Likes/Comments
     (sourced from the media object, not /insights) stay consistent."""
