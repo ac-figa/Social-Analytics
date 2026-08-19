@@ -1,0 +1,14 @@
+{
+  "_comment": "Maps caption @mentions / hashtags / keywords (lowercase, no @ or #) to a canonical Partnership name. Edit freely -- this file is the only thing you need to touch to teach the suggestion layer about a new brand. It only ever populates Suggested_Partnership, never the manual Partnership column.",
+  "caffeborbone": "Caffe Borbone",
+  "caffe_borbone": "Caffe Borbone",
+  "axe": "AXE",
+  "axeitalia": "AXE",
+  "ferrerorocher": "Ferrero",
+  "ferrero": "Ferrero",
+  "nutella": "Ferrero",
+  "michelobultra": "Michelob Ultra",
+  "michelob_ultra": "Michelob Ultra",
+  "riomare": "Rio Mare",
+  "rio_mare": "Rio Mare"
+}
