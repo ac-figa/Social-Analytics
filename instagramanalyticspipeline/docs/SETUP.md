@@ -33,12 +33,19 @@ days the way a normal user token does.
 3. Click **Add Assets** on the new System User and assign:
    - The **Facebook Page** linked to your Instagram account (Full control)
    - The **Instagram account** itself, if it's listed as a separate asset
-4. Click **Generate New Token** on the System User:
+4. Before generating a token, the System User also needs a role on the
+   **app itself** (separate from the asset assignment above) -- go to
+   **Accounts -> Apps** in Business Settings, click into your app, and
+   look for an "Assign People"/"Assign System Users" option to give it a
+   role there. Skip this and Step 5's "Generate New Token" screen will
+   show **no permissions available to grant**, with no other indication
+   of why.
+5. Click **Generate New Token** on the System User:
    - Select the app you created in Step 1
    - Select permissions: `instagram_basic`, `instagram_manage_insights`,
      `pages_show_list`, `pages_read_engagement`, `business_management`
    - Set expiration to **Never** if given the option
-5. Copy the token immediately -- Meta only shows it once. This is your
+6. Copy the token immediately -- Meta only shows it once. This is your
    `META_ACCESS_TOKEN`.
 
 If your app is still in **Development mode**, tokens for System Users
@@ -102,3 +109,4 @@ account handles BigQuery auth. See `deploy/README.md`.)
 | `code 100`, "Unsupported get request" on a specific field/metric | That field/metric doesn't apply to this media type or API version | Expected for some posts -- the pipeline logs it per Post_ID and continues |
 | `(#4) Application request limit reached` | Rate limited | The pipeline retries automatically with backoff; if it persists, you're running too many manual test calls concurrently |
 | Empty `instagram_business_account` in Step 3 | Page isn't linked to an IG professional account | Re-check the linking step in Prerequisites |
+| "No permissions available" when generating the System User token | The System User has an asset assignment (Step 2.3) but no role on the **app itself** | Business Settings -> Accounts -> Apps -> your app -> assign the System User a role there (Step 2.4), then retry |
