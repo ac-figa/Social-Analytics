@@ -106,7 +106,17 @@ class FacebookGraphClient:
         raise GraphAPIError("Exhausted retries for batch request")
 
     def get_page_info(self) -> dict:
-        return self._get(self.page_id, {"fields": "id,name,username"})
+        """Also exchanges self.access_token for a Page Access Token,
+        required for every call below under Meta's "new Pages experience"
+        -- the System User token alone authenticates fine but silently
+        returns empty results (not an error) for /videos on some accounts,
+        which is why this exchange isn't optional. Piggybacked onto this
+        call's existing fields param rather than a separate request."""
+        payload = self._get(self.page_id, {"fields": "id,name,username,access_token"})
+        page_token = payload.get("access_token")
+        if page_token:
+            self.access_token = page_token
+        return payload
 
     # ---------------------------------------------------------------- #
     # Video listing
