@@ -25,6 +25,13 @@ GRAPH_BASE_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 BQ_PROJECT_ID = _require("BQ_PROJECT_ID")
 BQ_DATASET = os.environ.get("BQ_DATASET", "instagram_analytics")
 
+# Posts published more than this many days ago skip the detail/insights
+# refresh each run (their existing Instagram_Master row is left as-is) --
+# older content's numbers barely move, and re-fetching them every run
+# burns API calls and runtime for no real benefit. Still listed every run
+# so nothing gets wrongly marked deleted; just not re-synced.
+INSIGHTS_REFRESH_DAYS = int(os.environ.get("INSIGHTS_REFRESH_DAYS", "45"))
+
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 logging.basicConfig(

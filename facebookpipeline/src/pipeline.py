@@ -8,10 +8,10 @@ Run:  python -m src.pipeline
 """
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import bigquery_store, suggestions, transform
+from . import bigquery_store, config, suggestions, transform
 from .graph_client import FacebookGraphClient, GraphAPIError, TokenExpiredError
 
 # See instagramanalyticspipeline/src/pipeline.py for why this path math:
@@ -46,11 +46,30 @@ def run() -> int:
         log.warning("No videos returned for this Page -- nothing to do.")
         return 0
 
-    video_ids = [v["id"] for v in video_list]
-    log.info("Found %d videos.", len(video_ids))
+    all_video_ids = [v["id"] for v in video_list]
+    log.info("Found %d videos.", len(all_video_ids))
 
-    details = client.get_video_details(video_ids)
-    insights = client.get_video_insights(video_ids)
+    # See instagramanalyticspipeline/src/pipeline.py's twin of this block --
+    # only re-fetch details/insights for recently published videos.
+    cutoff = datetime.now(timezone.utc) - timedelta(days=config.INSIGHTS_REFRESH_DAYS)
+    refresh_items = [
+        v
+        for v in video_list
+        if (published := transform.parse_timestamp(v.get("created_time"))) is None
+        or published >= cutoff
+    ]
+    skipped_count = len(video_list) - len(refresh_items)
+    if skipped_count:
+        log.info(
+            "Skipping detail/insights refresh for %d video(s) published more "
+            "than %d days ago.",
+            skipped_count,
+            config.INSIGHTS_REFRESH_DAYS,
+        )
+
+    refresh_ids = [v["id"] for v in refresh_items]
+    details = client.get_video_details(refresh_ids)
+    insights = client.get_video_insights(refresh_ids)
 
     bq_client = bigquery_store.get_client()
     bigquery_store.ensure_schema(bq_client)
@@ -60,7 +79,7 @@ def run() -> int:
     rows = []
     failed_video_ids = []
 
-    for video_id in video_ids:
+    for video_id in refresh_ids:
         try:
             detail = details.get(video_id)
             if detail is None:
@@ -89,7 +108,9 @@ def run() -> int:
             failed_video_ids.append(video_id)
 
     bigquery_store.upsert_master_rows(bq_client, rows)
-    bigquery_store.mark_missing_as_deleted(bq_client, [r["Video_ID"] for r in rows])
+    # Uses every video still listed by the API (all_video_ids), not just the
+    # ones refreshed this run -- see the Instagram pipeline's twin comment.
+    bigquery_store.mark_missing_as_deleted(bq_client, all_video_ids)
     _sync_to_shared_content_layer(rows)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()
@@ -97,9 +118,10 @@ def run() -> int:
     bigquery_store.insert_history_snapshot(bq_client, history_rows, snapshot_date)
 
     log.info(
-        "Run complete: %d upserted, %d failed. Snapshot date: %s.",
+        "Run complete: %d upserted, %d failed, %d skipped (outside refresh window). Snapshot date: %s.",
         len(rows),
         len(failed_video_ids),
+        skipped_count,
         snapshot_date,
     )
     if failed_video_ids:

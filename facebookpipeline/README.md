@@ -38,7 +38,9 @@ python -m src.pipeline
 ```
 
 Safe to run repeatedly -- see `instagramanalyticspipeline/README.md`'s
-"Refreshing" section, identical behavior here.
+"Refreshing" section, identical behavior here, including the
+`INSIGHTS_REFRESH_DAYS` (default 45) window for skipping re-sync of old
+videos.
 
 ## Project layout
 

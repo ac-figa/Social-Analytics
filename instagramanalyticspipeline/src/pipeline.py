@@ -7,10 +7,10 @@ Run:  python -m src.pipeline
 """
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import bigquery_store, suggestions, transform
+from . import bigquery_store, config, suggestions, transform
 from .graph_client import GraphAPIError, InstagramGraphClient, TokenExpiredError
 
 # Repo root (two levels up from this file: src/ -> instagramanalyticspipeline/
@@ -47,12 +47,34 @@ def run() -> int:
         log.warning("No media returned for this account -- nothing to do.")
         return 0
 
-    media_ids = [m["id"] for m in media_list]
+    all_media_ids = [m["id"] for m in media_list]
     reel_count = sum(1 for m in media_list if m.get("media_product_type") == "REELS")
-    log.info("Found %d media items (%d Reels).", len(media_ids), reel_count)
+    log.info("Found %d media items (%d Reels).", len(all_media_ids), reel_count)
 
-    details = client.get_media_details(media_ids)
-    insights = client.get_media_insights(media_list)
+    # Only re-fetch details/insights for recently published posts -- older
+    # content's numbers barely move, and re-syncing it every run wastes API
+    # calls and runtime. Everything is still listed above (cheap) so
+    # mark_missing_as_deleted below never wrongly flags a dormant-but-still-
+    # live post; it just won't get its Instagram_Master row refreshed.
+    cutoff = datetime.now(timezone.utc) - timedelta(days=config.INSIGHTS_REFRESH_DAYS)
+    refresh_items = [
+        m
+        for m in media_list
+        if (published := transform.parse_timestamp(m.get("timestamp"))) is None
+        or published >= cutoff
+    ]
+    skipped_count = len(media_list) - len(refresh_items)
+    if skipped_count:
+        log.info(
+            "Skipping detail/insights refresh for %d post(s) published more "
+            "than %d days ago.",
+            skipped_count,
+            config.INSIGHTS_REFRESH_DAYS,
+        )
+
+    refresh_ids = [m["id"] for m in refresh_items]
+    details = client.get_media_details(refresh_ids)
+    insights = client.get_media_insights(refresh_items)
 
     bq_client = bigquery_store.get_client()
     bigquery_store.ensure_schema(bq_client)
@@ -62,7 +84,7 @@ def run() -> int:
     rows = []
     failed_post_ids = []
 
-    for item in media_list:
+    for item in refresh_items:
         post_id = item["id"]
         try:
             detail = details.get(post_id)
@@ -101,7 +123,10 @@ def run() -> int:
             failed_post_ids.append(post_id)
 
     bigquery_store.upsert_master_rows(bq_client, rows)
-    bigquery_store.mark_missing_as_deleted(bq_client, [r["Post_ID"] for r in rows])
+    # Uses every post still listed by the API (all_media_ids), not just the
+    # ones refreshed this run -- otherwise every skipped, still-live post
+    # would get wrongly marked Deleted_or_Unavailable.
+    bigquery_store.mark_missing_as_deleted(bq_client, all_media_ids)
     _sync_to_shared_content_layer(rows)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()
@@ -109,9 +134,10 @@ def run() -> int:
     bigquery_store.insert_history_snapshot(bq_client, history_rows, snapshot_date)
 
     log.info(
-        "Run complete: %d upserted, %d failed. Snapshot date: %s.",
+        "Run complete: %d upserted, %d failed, %d skipped (outside refresh window). Snapshot date: %s.",
         len(rows),
         len(failed_post_ids),
+        skipped_count,
         snapshot_date,
     )
     if failed_post_ids:

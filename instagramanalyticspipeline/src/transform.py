@@ -24,6 +24,20 @@ def _normalize_timestamp(raw: str):
     except ValueError:
         return raw  # unexpected format -- pass through rather than drop the row
 
+
+def parse_timestamp(raw: str):
+    """Parses an IG timestamp into a timezone-aware datetime, or None if
+    missing/unparseable. Used by pipeline.py to decide whether a post
+    falls inside the insights-refresh window -- callers should treat None
+    as "refresh it anyway" rather than silently skip a post we can't
+    reliably date."""
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, IG_TIMESTAMP_FORMAT)
+    except ValueError:
+        return None
+
 POST_TYPE_MAP = {
     "REELS": "Reel",
 }

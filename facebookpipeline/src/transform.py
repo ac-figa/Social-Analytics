@@ -19,6 +19,18 @@ def _normalize_timestamp(raw: str):
         return raw
 
 
+def parse_timestamp(raw: str):
+    """See instagramanalyticspipeline/src/transform.py's twin of this
+    function -- returns a timezone-aware datetime, or None if missing/
+    unparseable (callers should treat None as "refresh it anyway")."""
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, FB_TIMESTAMP_FORMAT)
+    except ValueError:
+        return None
+
+
 def build_master_row(video_detail: dict, insights: dict, page_info: dict) -> dict:
     """video_detail: result of graph_client.get_video_details()[video_id]
     insights: result of graph_client.get_video_insights()[video_id]

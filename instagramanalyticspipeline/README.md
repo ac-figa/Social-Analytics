@@ -105,6 +105,14 @@ marks any post no longer returned by the API (without deleting its row or
 history), and appends today's insights snapshot (deduped, so re-running
 the same day doesn't create duplicate snapshot rows).
 
+Only posts published within the last `INSIGHTS_REFRESH_DAYS` (default 45)
+actually get their details/insights re-fetched -- older posts are still
+listed every run (so nothing gets wrongly marked deleted) but their
+`Instagram_Master` row is left as whatever it was on its last real sync,
+since older content's numbers rarely move enough to be worth the extra API
+calls. Raise `INSIGHTS_REFRESH_DAYS` in `.env` (or run a one-off with it
+set higher) if you want a full backfill.
+
 For unattended scheduled refreshes, see `deploy/README.md` (Cloud Run Job
 + Cloud Scheduler).
 

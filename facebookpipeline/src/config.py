@@ -32,6 +32,10 @@ GRAPH_BASE_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 BQ_PROJECT_ID = _require("BQ_PROJECT_ID")
 BQ_DATASET = os.environ.get("BQ_DATASET", "facebook_analytics")
 
+# See instagramanalyticspipeline/src/config.py's twin of this value --
+# same reasoning, kept consistent across platforms.
+INSIGHTS_REFRESH_DAYS = int(os.environ.get("INSIGHTS_REFRESH_DAYS", "45"))
+
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 logging.basicConfig(
