@@ -50,7 +50,6 @@ OTHER_INSIGHTS_METRICS = [
     "saved",
     "shares",
     "total_interactions",
-    "follows",
 ]
 
 # Error codes/subcodes that mean "back off and retry", not "this data is

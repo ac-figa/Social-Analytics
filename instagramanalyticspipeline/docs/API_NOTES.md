@@ -31,7 +31,14 @@ ig_reels_video_view_total_time, follows`
 
 **Everything else** (feed video/image/carousel) -- a smaller, broadly-supported
 set, since Reels-only metrics reliably error on non-Reels media:
-`reach, saved, shares, total_interactions, follows`
+`reach, saved, shares, total_interactions`
+
+`follows` was in this list originally but turned out to reliably error
+with `(#100) The Media Insights API does not support the follows metric
+for this media product type` on live non-Reels posts, despite Meta's docs
+implying it was broadly supported -- confirmed against a real account in
+Aug 2026. Removed from `OTHER_INSIGHTS_METRICS`; still requested for
+Reels, where it does work.
 
 `likes` and `comments` are read from the media object's `like_count` /
 `comments_count` fields instead of `/insights`, since they're available
