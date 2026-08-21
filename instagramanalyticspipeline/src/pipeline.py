@@ -3,8 +3,10 @@ Main entrypoint: pulls Instagram media + insights, reattaches manual
 classifications, upserts Instagram_Master, marks vanished posts, and
 appends today's Instagram_Insights_History snapshot.
 
-Run:  python -m src.pipeline
+Run:               python -m src.pipeline
+Full backfill:      python -m src.pipeline --full
 """
+import argparse
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
@@ -24,7 +26,7 @@ if str(_REPO_ROOT) not in sys.path:
 log = logging.getLogger(__name__)
 
 
-def run() -> int:
+def run(full_refresh: bool = False) -> int:
     client = InstagramGraphClient()
 
     try:
@@ -56,21 +58,28 @@ def run() -> int:
     # calls and runtime. Everything is still listed above (cheap) so
     # mark_missing_as_deleted below never wrongly flags a dormant-but-still-
     # live post; it just won't get its Instagram_Master row refreshed.
-    cutoff = datetime.now(timezone.utc) - timedelta(days=config.INSIGHTS_REFRESH_DAYS)
-    refresh_items = [
-        m
-        for m in media_list
-        if (published := transform.parse_timestamp(m.get("timestamp"))) is None
-        or published >= cutoff
-    ]
-    skipped_count = len(media_list) - len(refresh_items)
-    if skipped_count:
-        log.info(
-            "Skipping detail/insights refresh for %d post(s) published more "
-            "than %d days ago.",
-            skipped_count,
-            config.INSIGHTS_REFRESH_DAYS,
-        )
+    # --full (or full_refresh=True) bypasses this entirely for a one-off
+    # backfill of every post's numbers.
+    if full_refresh:
+        log.info("Full refresh requested -- re-fetching details/insights for all %d post(s).", len(media_list))
+        refresh_items = media_list
+        skipped_count = 0
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=config.INSIGHTS_REFRESH_DAYS)
+        refresh_items = [
+            m
+            for m in media_list
+            if (published := transform.parse_timestamp(m.get("timestamp"))) is None
+            or published >= cutoff
+        ]
+        skipped_count = len(media_list) - len(refresh_items)
+        if skipped_count:
+            log.info(
+                "Skipping detail/insights refresh for %d post(s) published more "
+                "than %d days ago. Run with --full to refresh everything.",
+                skipped_count,
+                config.INSIGHTS_REFRESH_DAYS,
+            )
 
     refresh_ids = [m["id"] for m in refresh_items]
     details = client.get_media_details(refresh_ids)
@@ -184,4 +193,12 @@ def _sync_to_shared_content_layer(rows: list) -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Refresh every post's details/insights, ignoring INSIGHTS_REFRESH_DAYS "
+        "(a full backfill instead of the normal incremental run).",
+    )
+    args = parser.parse_args()
+    sys.exit(run(full_refresh=args.full))

@@ -4,8 +4,10 @@ classifications, upserts Facebook_Master, marks vanished videos, appends
 today's Facebook_Insights_History snapshot, and mirrors into the shared
 cross-platform content layer for cross-platform matching.
 
-Run:  python -m src.pipeline
+Run:               python -m src.pipeline
+Full backfill:      python -m src.pipeline --full
 """
+import argparse
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
@@ -23,7 +25,7 @@ if str(_REPO_ROOT) not in sys.path:
 log = logging.getLogger(__name__)
 
 
-def run() -> int:
+def run(full_refresh: bool = False) -> int:
     client = FacebookGraphClient()
 
     try:
@@ -50,22 +52,28 @@ def run() -> int:
     log.info("Found %d videos.", len(all_video_ids))
 
     # See instagramanalyticspipeline/src/pipeline.py's twin of this block --
-    # only re-fetch details/insights for recently published videos.
-    cutoff = datetime.now(timezone.utc) - timedelta(days=config.INSIGHTS_REFRESH_DAYS)
-    refresh_items = [
-        v
-        for v in video_list
-        if (published := transform.parse_timestamp(v.get("created_time"))) is None
-        or published >= cutoff
-    ]
-    skipped_count = len(video_list) - len(refresh_items)
-    if skipped_count:
-        log.info(
-            "Skipping detail/insights refresh for %d video(s) published more "
-            "than %d days ago.",
-            skipped_count,
-            config.INSIGHTS_REFRESH_DAYS,
-        )
+    # only re-fetch details/insights for recently published videos. --full
+    # (or full_refresh=True) bypasses this for a one-off backfill.
+    if full_refresh:
+        log.info("Full refresh requested -- re-fetching details/insights for all %d video(s).", len(video_list))
+        refresh_items = video_list
+        skipped_count = 0
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=config.INSIGHTS_REFRESH_DAYS)
+        refresh_items = [
+            v
+            for v in video_list
+            if (published := transform.parse_timestamp(v.get("created_time"))) is None
+            or published >= cutoff
+        ]
+        skipped_count = len(video_list) - len(refresh_items)
+        if skipped_count:
+            log.info(
+                "Skipping detail/insights refresh for %d video(s) published more "
+                "than %d days ago. Run with --full to refresh everything.",
+                skipped_count,
+                config.INSIGHTS_REFRESH_DAYS,
+            )
 
     refresh_ids = [v["id"] for v in refresh_items]
     details = client.get_video_details(refresh_ids)
@@ -164,4 +172,12 @@ def _sync_to_shared_content_layer(rows: list) -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Refresh every video's details/insights, ignoring INSIGHTS_REFRESH_DAYS "
+        "(a full backfill instead of the normal incremental run).",
+    )
+    args = parser.parse_args()
+    sys.exit(run(full_refresh=args.full))

@@ -40,7 +40,11 @@ python -m src.pipeline
 Safe to run repeatedly -- see `instagramanalyticspipeline/README.md`'s
 "Refreshing" section, identical behavior here, including the
 `INSIGHTS_REFRESH_DAYS` (default 45) window for skipping re-sync of old
-videos.
+videos, and the same `--full` flag for a one-off backfill:
+
+```bash
+python -m src.pipeline --full
+```
 
 ## Project layout
 

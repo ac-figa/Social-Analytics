@@ -110,8 +110,14 @@ actually get their details/insights re-fetched -- older posts are still
 listed every run (so nothing gets wrongly marked deleted) but their
 `Instagram_Master` row is left as whatever it was on its last real sync,
 since older content's numbers rarely move enough to be worth the extra API
-calls. Raise `INSIGHTS_REFRESH_DAYS` in `.env` (or run a one-off with it
-set higher) if you want a full backfill.
+calls.
+
+For a one-off full backfill (refresh every post regardless of age),
+without changing `.env`:
+
+```bash
+python -m src.pipeline --full
+```
 
 For unattended scheduled refreshes, see `deploy/README.md` (Cloud Run Job
 + Cloud Scheduler).
