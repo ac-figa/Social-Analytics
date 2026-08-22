@@ -55,34 +55,46 @@ Fill in `META_ACCESS_TOKEN` (same value as the Instagram pipeline's),
 Same Graph API, same error codes -- see
 `instagramanalyticspipeline/docs/SETUP.md`'s Troubleshooting table.
 
-### `Views_Organic`, `Impressions`, `Average_Watch_Time`, `Watch_Time` are always NULL
+### Views/Views_Organic/Average_Watch_Time/Watch_Time come from Page Post Insights, not video_insights
 
-This isn't a bug to fix on your end -- confirmed live (Aug 2026) that
-Meta's `/video_insights` endpoint returns a successful response with
-every metric hardcoded to `0` for this Page, regardless of a video's real
-engagement, across both regular videos and Reels. Not a permission issue
-(`read_insights` present and confirmed working elsewhere), not
-content-type-specific -- the endpoint itself appears non-functional for
-this Page, likely tied to Meta's "new Pages experience" migration (the
-same underlying quirk that requires the Page Access Token exchange in
-`get_page_info()`).
+Confirmed live (Aug 2026): `/{video-id}/video_insights` returns a
+successful response with every metric hardcoded to `0` for this Page,
+regardless of a video's real engagement, across both regular videos and
+Reels. Not a permission issue (`read_insights` present and confirmed
+working elsewhere), not content-type-specific -- the endpoint itself
+appears non-functional for this Page, likely tied to Meta's "new Pages
+experience" migration (the same underlying quirk that requires the Page
+Access Token exchange in `get_page_info()`).
 
-Given the API confidently returns `0` rather than erroring, there's no
-reliable way for the pipeline to distinguish "genuinely zero engagement"
-from "this metric doesn't work for this Page" -- so `src/graph_client.py`
-doesn't call `/video_insights` at all anymore. `Views` instead comes from
-the video object's own `views` field, which does return real numbers;
-the other four columns stay `NULL` on purpose (honest "unavailable"
-rather than a fake zero) until Meta fixes this for Pages like this one.
+The same metrics *do* work, just via a different, older API: every video
+has a distinct Page Post ID (`views_detail["post_id"]`, different from
+the video ID), and `/{page-id}_{post-id}/insights` -- not
+`/{video-id}/video_insights` -- returns real numbers for
+`post_video_views`, `post_video_views_organic`,
+`post_video_avg_time_watched`, and `post_video_view_time`. That's what
+`get_post_insights()` in `src/graph_client.py` calls. `Views` prefers
+this insights value and only falls back to the video object's own
+(differently-defined, less standard) `views` field if a video has no
+`post_id` or its insights call fails outright.
 
-If you want to re-check whether it's fixed, test directly:
+`Impressions` and `Shares` genuinely have no working metric as of this
+writing -- every impressions-metric name tried (`post_impressions`,
+`post_impressions_unique`, `post_impressions_organic`) returns "not a
+valid insights metric," and the post object's `shares` field simply isn't
+returned at all. Meta appears to have deprecated Page post impressions
+entirely, mirroring how it deprecated Instagram's own `impressions`
+metric (see `instagramanalyticspipeline/docs/API_NOTES.md`). These two
+stay `NULL` -- honest "unavailable" rather than a fake zero.
+
+If you want to re-check any of this later, test directly against a video
+with known real engagement:
 
 ```bash
-curl -s "https://graph.facebook.com/v21.0/<VIDEO_ID>/video_insights?metric=total_video_views&access_token=<PAGE_TOKEN>"
+# Get the video's post_id:
+curl -s "https://graph.facebook.com/v21.0/<VIDEO_ID>?fields=post_id&access_token=<PAGE_TOKEN>"
+# Then query Page Post Insights on the composite ID:
+curl -s "https://graph.facebook.com/v21.0/<PAGE_ID>_<POST_ID>/insights?metric=post_video_views&access_token=<PAGE_TOKEN>"
 ```
 
-(Note: this needs a Page Access Token, not the System User token directly
--- see the Page Access Token note above for how to get one.) If it
-returns a real non-zero value, `get_video_details`/`build_master_row` in
-`src/graph_client.py` / `src/transform.py` can be extended to use it
-again.
+(Needs a Page Access Token, not the System User token directly -- see the
+Page Access Token note above for how to get one.)

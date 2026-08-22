@@ -31,18 +31,25 @@ def parse_timestamp(raw: str):
         return None
 
 
-def build_master_row(video_detail: dict, page_info: dict) -> dict:
+def build_master_row(video_detail: dict, insights: dict, page_info: dict) -> dict:
     """video_detail: result of graph_client.get_video_details()[video_id]
+    insights: result of graph_client.get_post_insights()[video_id] --
+    Page Post Insights, NOT /video_insights (broken for this account,
+    see graph_client.py's module docstring)
     page_info: {"id":..., "name":..., "username":...} fetched once
 
-    Views comes from the video object's own `views` field, not
-    /video_insights -- confirmed live that video_insights returns a
-    successful-but-empty/all-zero response for this account regardless of
-    a video's real engagement (see graph_client.py's module docstring).
-    Views_Organic/Impressions/Average_Watch_Time/Watch_Time have no
-    object-level equivalent, so they stay None (honestly "unavailable")
-    rather than reporting the API's fake zero.
+    Views prefers the insights value (post_video_views -- a well-defined
+    "viewed for 3+ seconds" count, consistent with how views are counted
+    elsewhere in this project) and falls back to the video object's own
+    `views` field only if insights are missing entirely (e.g. no post_id).
+    Impressions and Shares stay None -- confirmed unavailable, not just
+    unfetched, see graph_client.py's module docstring.
     """
+    insights = insights or {}
+    views = insights.get("post_video_views")
+    if views is None:
+        views = video_detail.get("views")
+
     return {
         "Video_ID": video_detail["id"],
         "Page_ID": page_info.get("id"),
@@ -51,14 +58,14 @@ def build_master_row(video_detail: dict, page_info: dict) -> dict:
         "Length": video_detail.get("length"),
         "Publish_Date": _normalize_timestamp(video_detail.get("created_time")),
         "Permalink": video_detail.get("permalink_url"),
-        "Views": video_detail.get("views"),
-        "Views_Organic": None,  # video_insights unavailable for this account -- see docstring above
-        "Impressions": None,
-        "Average_Watch_Time": None,
-        "Watch_Time": None,
+        "Views": views,
+        "Views_Organic": insights.get("post_video_views_organic"),
+        "Impressions": None,  # confirmed unavailable -- see graph_client.py module docstring
+        "Average_Watch_Time": insights.get("post_video_avg_time_watched"),
+        "Watch_Time": insights.get("post_video_view_time"),
         "Likes": (video_detail.get("likes") or {}).get("summary", {}).get("total_count"),
         "Comments": (video_detail.get("comments") or {}).get("summary", {}).get("total_count"),
-        "Shares": None,  # not reliably exposed for video objects via this endpoint
+        "Shares": None,  # confirmed unavailable -- see graph_client.py module docstring
         "Partnership": None,  # filled by pipeline.py from facebook_classifications
         "Content_Type": None,
         "Suggested_Partnership": None,

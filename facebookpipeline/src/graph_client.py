@@ -12,17 +12,28 @@ is deliberately identical:
 - A token/permission failure (OAuthException, code 190) aborts the whole
   run immediately.
 
-`/video_insights` (total_video_views and friends) was tried first but
-confirmed live, across both regular videos and Reels, to return a
-successful 200 with every metric hardcoded to 0 for this account/Page --
-not an error, not permission-related (read_insights present and working),
-just silently wrong data. The plain `views` field on the video object
-itself is the one source that returns real numbers, so that's what Views
-is read from; the other video-level metrics (organic views, impressions,
-watch time) have no equivalent object field and are left `None` rather
-than reported as a fake zero. See docs/SETUP.md for the full writeup --
-worth re-testing `/video_insights` if Meta ever fixes this for "new Pages
-experience" Pages.
+`/{video-id}/video_insights` (total_video_views and friends) was tried
+first but confirmed live, across both regular videos and Reels, to
+return a successful 200 with every metric hardcoded to 0 for this
+account/Page -- not an error, not permission-related (read_insights
+present and working), just silently wrong data.
+
+The metrics that matter (views, organic views, watch time) *do* work,
+just via a different ID: every video has a distinct Page Post ID
+(`detail["post_id"]`), and `/{page-id}_{post-id}/insights` -- the older,
+separate Page Post Insights API -- returns real numbers for
+`post_video_views`, `post_video_views_organic`,
+`post_video_avg_time_watched`, and `post_video_view_time`. Confirmed
+against a real video with 32 likes: video-level insights reported 0
+everywhere, post-level insights reported 1872 views. `post_impressions`
+and every impressions-metric variant tried return "not a valid insights
+metric" -- Meta appears to have deprecated Page post impressions
+entirely, same as it deprecated Instagram's `impressions` metric (see
+instagramanalyticspipeline/docs/API_NOTES.md) -- so `Impressions` stays
+`None`, genuinely unavailable rather than unfetched. `Shares` was also
+re-checked directly on the post object and simply isn't returned at all.
+
+See docs/SETUP.md for the full writeup.
 """
 import json
 import logging
@@ -38,9 +49,18 @@ log = logging.getLogger(__name__)
 VIDEO_LIST_FIELDS = "id,created_time"
 
 VIDEO_DETAIL_FIELDS = (
-    "id,description,created_time,permalink_url,length,views,"
+    "id,description,created_time,permalink_url,length,views,post_id,"
     "likes.summary(true).limit(0),comments.summary(true).limit(0)"
 )
+
+# Page Post Insights metrics -- fetched via /{page-id}_{post-id}/insights,
+# NOT /video_insights (broken for this account, see module docstring).
+POST_INSIGHTS_METRICS = [
+    "post_video_views",
+    "post_video_views_organic",
+    "post_video_avg_time_watched",
+    "post_video_view_time",
+]
 
 # Same rate-limit codes as the Instagram client -- shared Graph API.
 RATE_LIMIT_ERROR_CODES = {4, 17, 32, 613}
@@ -180,10 +200,81 @@ class FacebookGraphClient:
                     )
         return results
 
+    # ---------------------------------------------------------------- #
+    # Post insights (batched, with per-post fallback) -- see module
+    # docstring for why this is keyed by post_id, not video_id
+    # ---------------------------------------------------------------- #
+    def get_post_insights(self, video_details: dict) -> dict:
+        """video_details: {video_id: detail_dict} from get_video_details(),
+        each with a 'post_id' (absent details, e.g. failed ones, are simply
+        skipped -- no insights to fetch for those anyway). Returns
+        {video_id: {metric_name: value}}."""
+        id_pairs = [
+            (video_id, detail["post_id"])
+            for video_id, detail in video_details.items()
+            if detail.get("post_id")
+        ]
+        results = {}
+        failed_post_ids = []
+
+        for chunk in _chunks(id_pairs, BATCH_CHUNK_SIZE):
+            batch_items = [
+                {
+                    "method": "GET",
+                    "relative_url": f"{self.page_id}_{post_id}/insights?metric={','.join(POST_INSIGHTS_METRICS)}",
+                }
+                for _, post_id in chunk
+            ]
+            responses = self._batch(batch_items)
+            for (video_id, post_id), resp in zip(chunk, responses):
+                body = _safe_json_str(resp.get("body"))
+                if resp.get("code") == 200 and "error" not in body:
+                    results[video_id] = _lifetime_values(body.get("data", []))
+                else:
+                    failed_post_ids.append((video_id, post_id))
+
+        for video_id, post_id in failed_post_ids:
+            results[video_id] = self._fallback_post_insights_per_metric(post_id)
+
+        return results
+
+    def _fallback_post_insights_per_metric(self, post_id: str) -> dict:
+        composite_id = f"{self.page_id}_{post_id}"
+        salvaged = {}
+        for metric in POST_INSIGHTS_METRICS:
+            try:
+                payload = self._get(f"{composite_id}/insights", {"metric": metric})
+                salvaged.update(_lifetime_values(payload.get("data", [])))
+            except TokenExpiredError:
+                raise
+            except GraphAPIError as e:
+                log.warning(
+                    "Post insight '%s' unavailable for post %s: %s", metric, composite_id, e
+                )
+                salvaged[metric] = None
+        return salvaged
+
 
 # ---------------------------------------------------------------------- #
 # Module-level helpers (identical logic to the Instagram client -- same API)
 # ---------------------------------------------------------------------- #
+def _lifetime_values(metric_objs: list) -> dict:
+    """Post Insights metrics come back with both a 'lifetime' and a 'day'
+    period in the same response -- we only want the lifetime total."""
+    return {
+        m["name"]: _extract_metric_value(m) for m in metric_objs if m.get("period") == "lifetime"
+    }
+
+
+def _extract_metric_value(metric_obj: dict):
+    if "total_value" in metric_obj:
+        return metric_obj["total_value"].get("value")
+    values = metric_obj.get("values")
+    if values:
+        return values[-1].get("value")
+    return None
+
+
 def _chunks(items: list, size: int):
     for i in range(0, len(items), size):
         yield items[i : i + size]

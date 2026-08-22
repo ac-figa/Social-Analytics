@@ -77,6 +77,7 @@ def run(full_refresh: bool = False) -> int:
 
     refresh_ids = [v["id"] for v in refresh_items]
     details = client.get_video_details(refresh_ids)
+    insights = client.get_post_insights(details)
 
     bq_client = bigquery_store.get_client()
     bigquery_store.ensure_schema(bq_client)
@@ -96,6 +97,7 @@ def run(full_refresh: bool = False) -> int:
 
             row = transform.build_master_row(
                 video_detail=detail,
+                insights=insights.get(video_id),
                 page_info=page_info,
             )
 
