@@ -6,10 +6,18 @@ this is an additive layer on top.
 """
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Explicit path rather than a bare load_dotenv() -- this module is meant to
+# be run as `python -m shared.src.run_matching` from the repo root (see
+# that module's docstring), where a CWD-relative search would never find
+# shared/.env. It happens to also get sourced indirectly when a platform
+# pipeline's own run picks up its own .env via CWD (see each pipeline's
+# _sync_to_shared_content_layer) -- that path keeps working unchanged,
+# since load_dotenv() never overwrites an already-set env var.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def _require(name: str) -> str:
