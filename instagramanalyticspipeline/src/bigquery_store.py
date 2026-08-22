@@ -41,6 +41,7 @@ MASTER_SCHEMA = [
     bigquery.SchemaField("Data_Comment", "STRING"),
     bigquery.SchemaField("Data", "STRING"),
     bigquery.SchemaField("Views", "INT64"),
+    bigquery.SchemaField("Views_Organic", "INT64"),
     bigquery.SchemaField("Reach", "INT64"),
     bigquery.SchemaField("Likes", "INT64"),
     bigquery.SchemaField("Shares", "INT64"),
@@ -74,6 +75,7 @@ HISTORY_SCHEMA = [
     bigquery.SchemaField("Snapshot_Date", "DATE", mode="REQUIRED"),
     bigquery.SchemaField("Post_ID", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("Views", "INT64"),
+    bigquery.SchemaField("Views_Organic", "INT64"),
     bigquery.SchemaField("Reach", "INT64"),
     bigquery.SchemaField("Likes", "INT64"),
     bigquery.SchemaField("Comments", "INT64"),
@@ -223,8 +225,8 @@ def insert_history_snapshot(client: bigquery.Client, rows: list, snapshot_date: 
     MERGE `{_table_ref(HISTORY_TABLE)}` T
     USING `{staging_id}` S
     ON T.Post_ID = S.Post_ID AND T.Snapshot_Date = S.Snapshot_Date
-    WHEN NOT MATCHED THEN INSERT (Snapshot_Date, Post_ID, Views, Reach, Likes, Comments, Shares, Saves, Watch_Time, Total_Interactions)
-      VALUES (S.Snapshot_Date, S.Post_ID, S.Views, S.Reach, S.Likes, S.Comments, S.Shares, S.Saves, S.Watch_Time, S.Total_Interactions)
+    WHEN NOT MATCHED THEN INSERT (Snapshot_Date, Post_ID, Views, Views_Organic, Reach, Likes, Comments, Shares, Saves, Watch_Time, Total_Interactions)
+      VALUES (S.Snapshot_Date, S.Post_ID, S.Views, S.Views_Organic, S.Reach, S.Likes, S.Comments, S.Shares, S.Saves, S.Watch_Time, S.Total_Interactions)
     """
     client.query(merge_sql).result()
     log.info("Inserted %d history snapshot rows for %s (deduped)", len(rows), snapshot_date)

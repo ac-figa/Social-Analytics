@@ -68,6 +68,20 @@ def build_master_row(
     """
     insights = insights or {}
 
+    # total_views/total_likes/total_comments aggregate across every
+    # placement the post appears in, including paid/boosted distribution
+    # (e.g. a partner running Partnership Ads on this content) -- see
+    # docs/API_NOTES.md "Boosted/paid views". Fall back to the organic-only
+    # metric/field if the total_ variant wasn't returned (e.g. an older API
+    # version, or a media type that doesn't support it) rather than losing
+    # the number entirely.
+    views_organic = insights.get("views")
+    total_views = insights.get("total_views")
+    likes_organic = media_detail.get("like_count")
+    total_likes = insights.get("total_likes")
+    comments_organic = media_detail.get("comments_count")
+    total_comments = insights.get("total_comments")
+
     return {
         "Post_ID": media_detail["id"],
         "Account_ID": account_info.get("id"),
@@ -80,12 +94,13 @@ def build_master_row(
         "Post_Type": _post_type(
             media_detail.get("media_type"), media_detail.get("media_product_type")
         ),
-        "Views": insights.get("views"),
+        "Views": total_views if total_views is not None else views_organic,
+        "Views_Organic": views_organic,
         "Reach": insights.get("reach"),
-        "Likes": media_detail.get("like_count"),
+        "Likes": total_likes if total_likes is not None else likes_organic,
         "Shares": insights.get("shares"),
         "Follows": insights.get("follows"),
-        "Comments": media_detail.get("comments_count"),
+        "Comments": total_comments if total_comments is not None else comments_organic,
         "Saves": insights.get("saved"),
         "Total_Interactions": insights.get("total_interactions"),
         "Watch_Time": insights.get("ig_reels_video_view_total_time"),
@@ -133,6 +148,7 @@ def build_history_row(master_row: dict, snapshot_date: str) -> dict:
         "Snapshot_Date": snapshot_date,
         "Post_ID": master_row["Post_ID"],
         "Views": master_row.get("Views"),
+        "Views_Organic": master_row.get("Views_Organic"),
         "Reach": master_row.get("Reach"),
         "Likes": master_row.get("Likes"),
         "Comments": master_row.get("Comments"),

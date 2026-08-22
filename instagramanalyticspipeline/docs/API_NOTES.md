@@ -26,12 +26,14 @@ shortcode`
 ## Insights metrics used
 
 **Reels** (`media_product_type = REELS`):
-`views, reach, saved, shares, total_interactions, ig_reels_avg_watch_time,
-ig_reels_video_view_total_time, follows`
+`views, total_views, total_likes, total_comments, reach, saved, shares,
+total_interactions, ig_reels_avg_watch_time, ig_reels_video_view_total_time,
+follows`
 
 **Everything else** (feed video/image/carousel) -- a smaller, broadly-supported
 set, since Reels-only metrics reliably error on non-Reels media:
-`reach, saved, shares, total_interactions`
+`views, total_views, total_likes, total_comments, reach, saved, shares,
+total_interactions`
 
 `follows` was in this list originally but turned out to reliably error
 with `(#100) The Media Insights API does not support the follows metric
@@ -40,9 +42,47 @@ implying it was broadly supported -- confirmed against a real account in
 Aug 2026. Removed from `OTHER_INSIGHTS_METRICS`; still requested for
 Reels, where it does work.
 
-`likes` and `comments` are read from the media object's `like_count` /
-`comments_count` fields instead of `/insights`, since they're available
-there directly and save an API call.
+`likes` and `comments` (the *organic-only* counts) are read from the media
+object's `like_count` / `comments_count` fields instead of `/insights`,
+since they're available there directly and save an API call. The
+paid-inclusive totals (see below) do come from `/insights`.
+
+`views` was missing from `OTHER_INSIGHTS_METRICS` until Aug 2026 -- a
+latent gap where `Instagram_Master.Views` was silently `None` for every
+non-Reels post. Confirmed live that `views` is in fact a valid metric for
+`FEED` media too; added.
+
+## Boosted/paid views (Aug 2026)
+
+`Views`/`Likes`/`Comments` as read from `views`/`like_count`/`comments_count`
+are **organic only** -- they do not include reach from paid distribution,
+e.g. a partner brand running **Partnership Ads** (formerly Branded Content
+Ads) on this account's content via their own ad account. This was
+confirmed to matter a lot in practice: spot-checking 50 recent Reels found
+`total_views` exceeding `views` on 37 of them, by as much as 7.2M vs 1.4M
+on one post.
+
+Meta added `total_views`, `total_likes`, `total_comments` to the
+`/{ig-media-id}/insights` endpoint specifically to solve this -- they
+aggregate a post's performance "across all surfaces" (organic + any paid
+placement the same content object was used in, including Partnership Ads),
+confirmed live against this account's own token (Instagram API with
+Facebook Login / System User, no Marketing API or ad-account access
+needed). `Views`/`Likes`/`Comments` in `Instagram_Master` now prefer these
+`total_*` metrics, falling back to the organic-only value only if
+`total_*` wasn't returned. The organic-only value is preserved separately
+as `Views_Organic` (mirroring `facebookpipeline`'s `Views`/`Views_Organic`
+split) so the paid contribution can still be seen (`Views - Views_Organic`).
+
+This does **not** require Marketing API access, `ads_read`, or the System
+User being assigned to any Ad Account -- that path was explored first
+(see git history) and turned out to be a dead end for this use case: the
+Ad Account those permissions would unlock is *this account's own*, but the
+boosted views come from the *partner's* Ad Account (Partnership Ads run by
+the partner, using their own ad account, against this account's content)
+-- something the Marketing API on this account's token was never going to
+be able to see. `total_views` sidesteps that entirely because it's scoped
+to the content object, not to any one ad account.
 
 ### Deprecated / retired
 - `impressions` -- deprecated for any media created after **July 2,

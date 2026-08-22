@@ -35,8 +35,17 @@ MEDIA_DETAIL_FIELDS = (
 # video/image/carousel) only get the metrics documented as broadly
 # supported, to avoid a single unsupported metric failing the whole call
 # -- see docs/API_NOTES.md for which metrics are Reels-only.
+#
+# total_views/total_likes/total_comments are aggregated across ALL
+# placements a post appears in -- including paid/boosted distribution
+# (e.g. a partner running Partnership Ads on this content) -- unlike
+# views/likes/comments, which are organic-only. See docs/API_NOTES.md
+# "Boosted/paid views" for how this was confirmed live.
 REELS_INSIGHTS_METRICS = [
     "views",
+    "total_views",
+    "total_likes",
+    "total_comments",
     "reach",
     "saved",
     "shares",
@@ -46,6 +55,10 @@ REELS_INSIGHTS_METRICS = [
     "follows",
 ]
 OTHER_INSIGHTS_METRICS = [
+    "views",
+    "total_views",
+    "total_likes",
+    "total_comments",
     "reach",
     "saved",
     "shares",

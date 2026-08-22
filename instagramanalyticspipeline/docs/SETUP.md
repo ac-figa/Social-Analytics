@@ -100,6 +100,31 @@ gcloud auth application-default login
 (For the Cloud Run Job deployment, this isn't needed -- the job's service
 account handles BigQuery auth. See `deploy/README.md`.)
 
+## Migrating an existing deployment (boosted-views fix, Aug 2026)
+
+If you already had this pipeline running before Aug 2026, `Instagram_Master`
+and `Instagram_Insights_History` exist in BigQuery with an older schema
+that's missing the new `Views_Organic` column (see `docs/API_NOTES.md`
+"Boosted/paid views"). The pipeline only *creates* tables that don't exist
+yet -- it won't add a missing column to a table that's already there -- so
+run this once, replacing `<PROJECT>` / `<DATASET>` with your `BQ_PROJECT_ID`
+/ `BQ_DATASET`:
+
+```bash
+bq query --use_legacy_sql=false '
+ALTER TABLE `<PROJECT>.<DATASET>.instagram_master`
+  ADD COLUMN IF NOT EXISTS Views_Organic INT64;
+ALTER TABLE `<PROJECT>.<DATASET>.instagram_insights_history`
+  ADD COLUMN IF NOT EXISTS Views_Organic INT64;
+'
+```
+
+Existing rows will have `Views_Organic = NULL` until their next refresh
+(within `INSIGHTS_REFRESH_DAYS`, or run with `--full` to backfill
+everything immediately). `Views` itself updates in place on every normal
+run, so you don't need `--full` just to get boosted-inclusive view counts
+-- only to backfill the `Views_Organic` breakdown on older posts.
+
 ## Troubleshooting
 
 | Error | Meaning | Fix |
