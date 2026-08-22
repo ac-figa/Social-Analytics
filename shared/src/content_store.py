@@ -42,6 +42,7 @@ CONTENT_ITEMS_SCHEMA = [
     bigquery.SchemaField("Permalink", "STRING"),
     bigquery.SchemaField("Post_Type", "STRING"),
     bigquery.SchemaField("Thumbnail_URL", "STRING"),
+    bigquery.SchemaField("Duration", "FLOAT64"),  # seconds; NULL for Instagram (see matching.py)
     bigquery.SchemaField("Views", "INT64"),
     bigquery.SchemaField("Likes", "INT64"),
     bigquery.SchemaField("Comments", "INT64"),
@@ -142,7 +143,7 @@ def get_ungrouped_items(client: bigquery.Client) -> list:
     """Active content_items with no row in content_group_members at all --
     candidates for matching (auto or manual)."""
     query = f"""
-    SELECT ci.Content_ID, ci.Platform, ci.Caption, ci.Publish_Date
+    SELECT ci.Content_ID, ci.Platform, ci.Caption, ci.Publish_Date, ci.Duration
     FROM `{_table_ref(CONTENT_ITEMS_TABLE)}` ci
     LEFT JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m
       ON ci.Content_ID = m.Content_ID

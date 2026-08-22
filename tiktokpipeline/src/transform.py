@@ -63,6 +63,7 @@ def to_content_item(master_row: dict) -> dict:
         "Permalink": master_row.get("Permalink"),
         "Post_Type": "Video",
         "Thumbnail_URL": None,
+        "Duration": master_row.get("Duration"),
         "Views": master_row.get("Views"),
         "Likes": master_row.get("Likes"),
         "Comments": master_row.get("Comments"),

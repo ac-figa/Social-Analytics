@@ -26,6 +26,12 @@ AUTO_CONFIRM_SCORE = 0.82
 # contributes nothing to the score.
 MAX_DATE_DELTA_DAYS = 5
 
+# The same video file, re-uploaded to a different platform, should have
+# essentially identical duration -- a few seconds of tolerance covers
+# rounding differences between platforms' own duration fields. Beyond
+# this, duration proximity contributes nothing to the score.
+MAX_DURATION_DELTA_SECONDS = 3.0
+
 _MENTION_HASHTAG_RE = re.compile(r"[@#]\w+")
 _PUNCTUATION_RE = re.compile(r"[^\w\s]")
 
@@ -76,9 +82,23 @@ def _date_proximity(a: datetime, b: datetime) -> float:
     return 1.0 - (delta_days / MAX_DATE_DELTA_DAYS)
 
 
+def _duration_proximity(a, b):
+    """1.0 for identical durations, decaying linearly to 0.0 at
+    MAX_DURATION_DELTA_SECONDS apart. Returns None (not 0.0) when either
+    side doesn't have a duration at all -- e.g. Instagram, which never
+    exposes one -- so callers can tell "no signal" apart from "signal says
+    these don't match"."""
+    if a is None or b is None:
+        return None
+    delta = abs(a - b)
+    if delta > MAX_DURATION_DELTA_SECONDS:
+        return 0.0
+    return 1.0 - (delta / MAX_DURATION_DELTA_SECONDS)
+
+
 def pair_score(item_a: dict, item_b: dict) -> float:
     """item_*: {"Content_ID":..., "Platform":..., "Caption":...,
-    "Publish_Date": datetime or None}.
+    "Publish_Date": datetime or None, "Duration": seconds or None}.
 
     Same-platform pairs always score 0 -- matching links the same piece of
     content across *different* platforms, not near-duplicate posts on one
@@ -89,10 +109,23 @@ def pair_score(item_a: dict, item_b: dict) -> float:
 
     cap_score = _caption_similarity(item_a.get("Caption"), item_b.get("Caption"))
     date_score = _date_proximity(item_a.get("Publish_Date"), item_b.get("Publish_Date"))
+    dur_score = _duration_proximity(item_a.get("Duration"), item_b.get("Duration"))
 
-    # Caption match carries almost all the signal. Date proximity alone is
-    # never enough on its own -- lots of unrelated posts land on the same
-    # day -- so it only nudges an already-plausible caption match.
+    if dur_score is not None:
+        # Duration + publish date are close to a unique fingerprint for
+        # "the same upload, re-posted" -- confirmed live (Aug 2026) that
+        # relying on caption alone missed real matches because captions
+        # get reworded substantially per platform. When both sides expose
+        # a duration (Facebook/YouTube/TikTok all do; Instagram never
+        # does), it becomes the primary signal and caption drops to a
+        # tie-breaking "plus".
+        return 0.5 * dur_score + 0.3 * date_score + 0.2 * cap_score
+
+    # At least one side has no duration at all (always true for Instagram)
+    # -- fall back to the caption-led scheme. Caption match carries almost
+    # all the signal here; date proximity alone is never enough on its own
+    # -- lots of unrelated posts land on the same day -- so it only nudges
+    # an already-plausible caption match.
     return 0.75 * cap_score + 0.25 * date_score
 
 

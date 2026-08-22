@@ -5,15 +5,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.matching import MIN_SUGGEST_SCORE, find_candidate_groups, pair_score  # noqa: E402
+from src.matching import (  # noqa: E402
+    AUTO_CONFIRM_SCORE,
+    MIN_SUGGEST_SCORE,
+    find_candidate_groups,
+    pair_score,
+)
 
 
-def item(content_id, platform, caption, day):
+def item(content_id, platform, caption, day, duration=None):
     return {
         "Content_ID": content_id,
         "Platform": platform,
         "Caption": caption,
         "Publish_Date": datetime(2026, 1, day),
+        "Duration": duration,
     }
 
 
@@ -51,6 +57,32 @@ class TestPairScore(unittest.TestCase):
             "tt:1", "TikTok", "Which type of Italy trip do you prefer? \U0001f1ee\U0001f1f9☀️", 21
         )
         self.assertGreaterEqual(pair_score(a, b), MIN_SUGGEST_SCORE)
+
+    def test_matching_duration_overrides_weak_caption(self):
+        """When both sides expose a duration (YouTube/TikTok/Facebook all
+        do), it becomes the primary signal -- a near-identical duration on
+        the same day should score high even if the caption/title wording
+        has almost nothing in common (e.g. a YouTube SEO title vs. a
+        TikTok caption for the same upload)."""
+        a = item("yt:1", "YouTube", "Best Pizza in Rome? Taste Test", 10, duration=42.0)
+        b = item("tt:1", "TikTok", "trying every slice in Rome \U0001f355", 10, duration=42.0)
+        self.assertGreaterEqual(pair_score(a, b), AUTO_CONFIRM_SCORE)
+
+    def test_mismatched_duration_blocks_auto_confirm_despite_identical_caption(self):
+        """A big duration gap on the same day, same caption, should still
+        pull the score down significantly -- guards against two distinct
+        videos that happen to share a generic caption/date."""
+        a = item("yt:1", "YouTube", "Weekend recap", 10, duration=15.0)
+        b = item("tt:1", "TikTok", "Weekend recap", 10, duration=90.0)
+        self.assertLess(pair_score(a, b), AUTO_CONFIRM_SCORE)
+
+    def test_instagram_missing_duration_falls_back_to_caption(self):
+        """Instagram never exposes Duration -- a pair involving it must
+        still use the caption-led scheme, not silently score 0 just
+        because one side has no duration."""
+        a = item("ig:1", "Instagram", "New drop with @caffeborbone this week", 5)
+        b = item("yt:1", "YouTube", "New drop with @caffeborbone this week", 5, duration=30.0)
+        self.assertGreater(pair_score(a, b), 0.9)
 
 
 class TestFindCandidateGroups(unittest.TestCase):

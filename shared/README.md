@@ -39,11 +39,22 @@ detail or drowning it in nullable platform-specific columns. Instead:
 
 `src/matching.py` is pure Python (no BigQuery dependency, see
 `tests/test_matching.py`) and scores how likely two content_items from
-*different* platforms are the same underlying video, using caption
-word-overlap plus how close together they were posted. High-confidence
-matches (`AUTO_CONFIRM_SCORE`, currently 0.82) become a confirmed group
+*different* platforms are the same underlying video, using publish date,
+duration, and caption word-overlap. High-confidence matches
+(`AUTO_CONFIRM_SCORE`, currently 0.82) become a confirmed group
 immediately; anything above `MIN_SUGGEST_SCORE` (0.55) but below that
 becomes a pending group a human reviews.
+
+**Duration is the primary signal when both sides have one.** Facebook,
+YouTube, and TikTok all expose a video's duration; the same upload
+re-posted to two of them should have essentially identical duration, so
+when both items have one it drives half the score (date proximity 0.3,
+caption 0.2 as a tie-breaker). Instagram never exposes duration at all
+(see `instagramanalyticspipeline/docs/API_NOTES.md`), so any pair
+involving it falls back to caption (0.75) + date (0.25) -- confirmed live
+(Aug 2026) that this needs the caption metric to tolerate captions being
+reworded substantially per platform, which is why `_caption_similarity`
+uses an overlap coefficient rather than plain Jaccard similarity.
 
 This runs automatically at the end of every platform pipeline's run (see
 `_sync_to_shared_content_layer` in each pipeline's `pipeline.py`), or
@@ -56,6 +67,24 @@ python -m shared.src.run_matching
 Nothing here is ever final -- `content_store.remove_member` /
 `add_members` let a human correct a wrong auto-match or link things
 manually, regardless of what the heuristic decided.
+
+## Backfilling Instagram's Duration from Facebook
+
+Instagram's Graph API never exposes video duration, full stop -- but when
+a Reel is also cross-posted to Facebook, it's the same video file, and
+Facebook's `Length` field *is* readable. Once matching has linked the two
+(above), run:
+
+```bash
+python -m shared.src.backfill_instagram_duration
+```
+
+This writes Facebook's `Length` into `Instagram_Master.Duration` for every
+*confirmed* Instagram/Facebook match still missing one. It only reads from
+confirmed group memberships, never a pending suggestion. Posts never
+cross-posted to Facebook stay `NULL` -- there's no other source for this
+data. See `instagramanalyticspipeline/docs/API_NOTES.md` "Confirmed gaps"
+for the full history of why this field is otherwise unfillable.
 
 ## Setup
 
@@ -75,6 +104,8 @@ src/
   content_store.py  BigQuery schema + upsert/query logic for the 3 tables above
   matching.py        pure-Python matching heuristic (no BigQuery dependency)
   run_matching.py     stand-alone entrypoint: match whatever's currently ungrouped
+  backfill_instagram_duration.py   stand-alone entrypoint: fill Instagram_Master.Duration
+                                    from matched Facebook posts' Length
 sql/unified_content_schema.sql   reference DDL
 tests/test_matching.py            unit tests for the matching heuristic
 ```

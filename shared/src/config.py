@@ -32,6 +32,14 @@ def _require(name: str) -> str:
 BQ_PROJECT_ID = _require("BQ_PROJECT_ID")
 SHARED_BQ_DATASET = os.environ.get("SHARED_BQ_DATASET", "social_analytics")
 
+# Used only by backfill_instagram_duration.py, which reaches directly into
+# each platform's own dataset (all in the same GCP project) -- these
+# default to each pipeline's own BQ_DATASET default, so no extra .env
+# setup is needed unless you customized BQ_DATASET in that pipeline's own
+# .env, in which case set the matching override here too.
+IG_BQ_DATASET = os.environ.get("IG_BQ_DATASET", "instagram_analytics")
+FB_BQ_DATASET = os.environ.get("FB_BQ_DATASET", "facebook_analytics")
+
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 logging.basicConfig(

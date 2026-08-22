@@ -86,9 +86,17 @@ HISTORY_SCHEMA = [
 ]
 
 # Columns updated on an existing Instagram_Master row. Data/Data_Comment
-# are deliberately absent -- see module docstring.
+# are deliberately absent -- see module docstring. Duration is also
+# absent: the Graph API never returns it (see docs/API_NOTES.md), so
+# transform.py always produces None for it -- if it stayed in this list,
+# every normal run would stomp a value backfilled by
+# shared/src/backfill_instagram_duration.py back to NULL. It's still in
+# the INSERT column list below, so a brand-new post still gets an initial
+# (NULL) row; the backfill script is what actually fills it in later.
 _MASTER_UPDATE_COLUMNS = [f.name for f in MASTER_SCHEMA if f.name != "Post_ID"]
-_MASTER_UPDATE_COLUMNS = [c for c in _MASTER_UPDATE_COLUMNS if c not in ("Data", "Data_Comment")]
+_MASTER_UPDATE_COLUMNS = [
+    c for c in _MASTER_UPDATE_COLUMNS if c not in ("Data", "Data_Comment", "Duration")
+]
 
 
 def get_client() -> bigquery.Client:

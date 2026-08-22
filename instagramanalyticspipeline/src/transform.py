@@ -131,6 +131,7 @@ def to_content_item(master_row: dict) -> dict:
         "Permalink": master_row.get("Permalink"),
         "Post_Type": master_row.get("Post_Type"),
         "Thumbnail_URL": None,  # not fetched by this pipeline
+        "Duration": master_row.get("Duration"),  # always None -- see docs/API_NOTES.md
         "Views": master_row.get("Views"),
         "Likes": master_row.get("Likes"),
         "Comments": master_row.get("Comments"),
