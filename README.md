@@ -12,7 +12,7 @@ partner on demand.
 instagramanalyticspipeline/   Instagram Reels/posts -> BigQuery (live)
 facebookpipeline/              Facebook Page videos/Reels -> BigQuery (live, reuses the Instagram pipeline's Meta token)
 youtubepipeline/                YouTube Shorts/videos -> BigQuery (live)
-tiktokpipeline/                  TikTok videos -> BigQuery (planned, blocked on TikTok API approval)
+tiktokpipeline/                  TikTok videos -> BigQuery (live, running on Sandbox credentials while the Production app review is pending)
 shared/                          Cross-platform matching + partnership reporting layer all pipelines feed into
 webapp/                          Classification dashboard + shareable partner report pages (planned)
 ```
@@ -32,6 +32,7 @@ Each pipeline is self-contained -- see its own README for setup:
 - `instagramanalyticspipeline/README.md`
 - `facebookpipeline/README.md`
 - `youtubepipeline/README.md`
+- `tiktokpipeline/README.md`
 
 `shared/README.md` explains the cross-platform layer both of the above
 feed into.
