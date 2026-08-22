@@ -41,16 +41,28 @@ def normalize_caption(caption: str) -> str:
 
 
 def _caption_similarity(a: str, b: str) -> float:
-    """Word-overlap (Jaccard) similarity. Character-level diffing (e.g.
-    difflib) gives short, unrelated captions a deceptively high score just
-    from shared spaces/common letters -- word-set overlap is far more
-    predictable for "is this the same post, reworded or trimmed per
-    platform" than for "is this a typo of that"."""
+    """Word-overlap similarity, as an *overlap coefficient*
+    (intersection / smaller set's size) rather than Jaccard
+    (intersection / union). Confirmed live against this project's real
+    data (Aug 2026) that creators reword captions substantially per
+    platform -- e.g. IG "There's two types of Italy trip" vs. TikTok
+    "Which type of Italy trip do you prefer?" for the same video, posted
+    8 minutes apart. Jaccard's union in the denominator meant a short,
+    tightly-reworded caption got diluted by every word unique to the
+    *other* platform's phrasing, even when every one of its own words
+    matched -- scoring that real pair at 0.27. The overlap coefficient
+    instead asks "how much of the smaller caption's content is present in
+    the other," scoring the same pair at 0.50 and correctly clearing
+    MIN_SUGGEST_SCORE once combined with the date signal.
+
+    Character-level diffing (e.g. difflib) was tried first and rejected
+    for a different reason -- it gives short, unrelated captions a
+    deceptively high score just from shared spaces/common letters."""
     na, nb = normalize_caption(a), normalize_caption(b)
     words_a, words_b = set(na.split()), set(nb.split())
     if not words_a or not words_b:
         return 0.0
-    return len(words_a & words_b) / len(words_a | words_b)
+    return len(words_a & words_b) / min(len(words_a), len(words_b))
 
 
 def _date_proximity(a: datetime, b: datetime) -> float:

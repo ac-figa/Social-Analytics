@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.matching import find_candidate_groups, pair_score  # noqa: E402
+from src.matching import MIN_SUGGEST_SCORE, find_candidate_groups, pair_score  # noqa: E402
 
 
 def item(content_id, platform, caption, day):
@@ -38,6 +38,19 @@ class TestPairScore(unittest.TestCase):
         b = item("yt:1", "YouTube", "Trying the new latte flavor today", 30)
         near = item("fb:1", "Facebook", "Trying the new latte flavor today", 2)
         self.assertLess(pair_score(a, b), pair_score(a, near))
+
+    def test_reworded_caption_same_video_still_matches(self):
+        """Real production data (Aug 2026): same video, captioned
+        completely differently per platform, posted 8 minutes apart --
+        Jaccard scored this at 0.45 (below MIN_SUGGEST_SCORE), which is
+        why _caption_similarity uses an overlap coefficient instead."""
+        a = item(
+            "ig:1", "Instagram", "There's two types of Italy trip \U0001f90c\U0001f1ee\U0001f1f9", 21
+        )
+        b = item(
+            "tt:1", "TikTok", "Which type of Italy trip do you prefer? \U0001f1ee\U0001f1f9☀️", 21
+        )
+        self.assertGreaterEqual(pair_score(a, b), MIN_SUGGEST_SCORE)
 
 
 class TestFindCandidateGroups(unittest.TestCase):
