@@ -31,13 +31,18 @@ def parse_timestamp(raw: str):
         return None
 
 
-def build_master_row(video_detail: dict, insights: dict, page_info: dict) -> dict:
+def build_master_row(video_detail: dict, page_info: dict) -> dict:
     """video_detail: result of graph_client.get_video_details()[video_id]
-    insights: result of graph_client.get_video_insights()[video_id]
     page_info: {"id":..., "name":..., "username":...} fetched once
-    """
-    insights = insights or {}
 
+    Views comes from the video object's own `views` field, not
+    /video_insights -- confirmed live that video_insights returns a
+    successful-but-empty/all-zero response for this account regardless of
+    a video's real engagement (see graph_client.py's module docstring).
+    Views_Organic/Impressions/Average_Watch_Time/Watch_Time have no
+    object-level equivalent, so they stay None (honestly "unavailable")
+    rather than reporting the API's fake zero.
+    """
     return {
         "Video_ID": video_detail["id"],
         "Page_ID": page_info.get("id"),
@@ -46,11 +51,11 @@ def build_master_row(video_detail: dict, insights: dict, page_info: dict) -> dic
         "Length": video_detail.get("length"),
         "Publish_Date": _normalize_timestamp(video_detail.get("created_time")),
         "Permalink": video_detail.get("permalink_url"),
-        "Views": insights.get("total_video_views"),
-        "Views_Organic": insights.get("total_video_views_organic"),
-        "Impressions": insights.get("total_video_impressions"),
-        "Average_Watch_Time": insights.get("total_video_avg_time_watched"),
-        "Watch_Time": insights.get("total_video_view_total_time"),
+        "Views": video_detail.get("views"),
+        "Views_Organic": None,  # video_insights unavailable for this account -- see docstring above
+        "Impressions": None,
+        "Average_Watch_Time": None,
+        "Watch_Time": None,
         "Likes": (video_detail.get("likes") or {}).get("summary", {}).get("total_count"),
         "Comments": (video_detail.get("comments") or {}).get("summary", {}).get("total_count"),
         "Shares": None,  # not reliably exposed for video objects via this endpoint

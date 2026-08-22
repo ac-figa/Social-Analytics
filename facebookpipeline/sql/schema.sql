@@ -12,11 +12,11 @@ CREATE TABLE IF NOT EXISTS `${PROJECT}.${DATASET}.facebook_master` (
   Length                   FLOAT64,           -- seconds; Facebook does expose this, unlike Instagram
   Publish_Date             TIMESTAMP,
   Permalink                STRING,
-  Views                    INT64,
-  Views_Organic             INT64,
-  Impressions               INT64,
-  Average_Watch_Time        FLOAT64,
-  Watch_Time                FLOAT64,
+  Views                    INT64,             -- from the video object's own `views` field
+  Views_Organic             INT64,             -- always NULL: video_insights unavailable, see docs/SETUP.md
+  Impressions               INT64,             -- always NULL: video_insights unavailable, see docs/SETUP.md
+  Average_Watch_Time        FLOAT64,           -- always NULL: video_insights unavailable, see docs/SETUP.md
+  Watch_Time                FLOAT64,           -- always NULL: video_insights unavailable, see docs/SETUP.md
   Likes                     INT64,
   Comments                  INT64,
   Shares                    INT64,             -- not reliably available on the video object; usually NULL

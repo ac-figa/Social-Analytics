@@ -55,8 +55,34 @@ Fill in `META_ACCESS_TOKEN` (same value as the Instagram pipeline's),
 Same Graph API, same error codes -- see
 `instagramanalyticspipeline/docs/SETUP.md`'s Troubleshooting table.
 
-One Facebook-specific note: if `total_video_views` or other
-`video_insights` metrics start erroring for every video, Meta has likely
-renamed/retired that metric on this API version -- check the current
-[Video Insights reference](https://developers.facebook.com/docs/graph-api/reference/video/video_insights/)
-and update `VIDEO_INSIGHTS_METRICS` in `src/graph_client.py`.
+### `Views_Organic`, `Impressions`, `Average_Watch_Time`, `Watch_Time` are always NULL
+
+This isn't a bug to fix on your end -- confirmed live (Aug 2026) that
+Meta's `/video_insights` endpoint returns a successful response with
+every metric hardcoded to `0` for this Page, regardless of a video's real
+engagement, across both regular videos and Reels. Not a permission issue
+(`read_insights` present and confirmed working elsewhere), not
+content-type-specific -- the endpoint itself appears non-functional for
+this Page, likely tied to Meta's "new Pages experience" migration (the
+same underlying quirk that requires the Page Access Token exchange in
+`get_page_info()`).
+
+Given the API confidently returns `0` rather than erroring, there's no
+reliable way for the pipeline to distinguish "genuinely zero engagement"
+from "this metric doesn't work for this Page" -- so `src/graph_client.py`
+doesn't call `/video_insights` at all anymore. `Views` instead comes from
+the video object's own `views` field, which does return real numbers;
+the other four columns stay `NULL` on purpose (honest "unavailable"
+rather than a fake zero) until Meta fixes this for Pages like this one.
+
+If you want to re-check whether it's fixed, test directly:
+
+```bash
+curl -s "https://graph.facebook.com/v21.0/<VIDEO_ID>/video_insights?metric=total_video_views&access_token=<PAGE_TOKEN>"
+```
+
+(Note: this needs a Page Access Token, not the System User token directly
+-- see the Page Access Token note above for how to get one.) If it
+returns a real non-zero value, `get_video_details`/`build_master_row` in
+`src/graph_client.py` / `src/transform.py` can be extended to use it
+again.

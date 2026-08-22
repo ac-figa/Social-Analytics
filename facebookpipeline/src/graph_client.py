@@ -12,11 +12,17 @@ is deliberately identical:
 - A token/permission failure (OAuthException, code 190) aborts the whole
   run immediately.
 
-Metric names here are the standard Facebook Page video insights metrics
-as of GRAPH_API_VERSION -- Meta has renamed/retired video metrics before
-(see docs/API_NOTES.md), so if a metric starts coming back as an error for
-every video, check the current Graph API video_insights reference and
-update VIDEO_INSIGHTS_METRICS.
+`/video_insights` (total_video_views and friends) was tried first but
+confirmed live, across both regular videos and Reels, to return a
+successful 200 with every metric hardcoded to 0 for this account/Page --
+not an error, not permission-related (read_insights present and working),
+just silently wrong data. The plain `views` field on the video object
+itself is the one source that returns real numbers, so that's what Views
+is read from; the other video-level metrics (organic views, impressions,
+watch time) have no equivalent object field and are left `None` rather
+than reported as a fake zero. See docs/SETUP.md for the full writeup --
+worth re-testing `/video_insights` if Meta ever fixes this for "new Pages
+experience" Pages.
 """
 import json
 import logging
@@ -32,17 +38,9 @@ log = logging.getLogger(__name__)
 VIDEO_LIST_FIELDS = "id,created_time"
 
 VIDEO_DETAIL_FIELDS = (
-    "id,description,created_time,permalink_url,length,"
+    "id,description,created_time,permalink_url,length,views,"
     "likes.summary(true).limit(0),comments.summary(true).limit(0)"
 )
-
-VIDEO_INSIGHTS_METRICS = [
-    "total_video_views",
-    "total_video_views_organic",
-    "total_video_impressions",
-    "total_video_avg_time_watched",
-    "total_video_view_total_time",
-]
 
 # Same rate-limit codes as the Instagram client -- shared Graph API.
 RATE_LIMIT_ERROR_CODES = {4, 17, 32, 613}
@@ -182,65 +180,10 @@ class FacebookGraphClient:
                     )
         return results
 
-    # ---------------------------------------------------------------- #
-    # Insights (batched, with per-post fallback)
-    # ---------------------------------------------------------------- #
-    def get_video_insights(self, video_ids: list) -> dict:
-        results = {}
-        failed_ids = []
-
-        for chunk in _chunks(video_ids, BATCH_CHUNK_SIZE):
-            batch_items = [
-                {
-                    "method": "GET",
-                    "relative_url": f"{vid}/video_insights?metric={','.join(VIDEO_INSIGHTS_METRICS)}",
-                }
-                for vid in chunk
-            ]
-            responses = self._batch(batch_items)
-            for vid, resp in zip(chunk, responses):
-                body = _safe_json_str(resp.get("body"))
-                if resp.get("code") == 200 and "error" not in body:
-                    results[vid] = {
-                        m["name"]: _extract_metric_value(m) for m in body.get("data", [])
-                    }
-                else:
-                    failed_ids.append(vid)
-
-        for vid in failed_ids:
-            results[vid] = self._fallback_insights_per_metric(vid)
-
-        return results
-
-    def _fallback_insights_per_metric(self, video_id: str) -> dict:
-        salvaged = {}
-        for metric in VIDEO_INSIGHTS_METRICS:
-            try:
-                payload = self._get(f"{video_id}/video_insights", {"metric": metric})
-                data = payload.get("data", [])
-                salvaged[metric] = _extract_metric_value(data[0]) if data else None
-            except TokenExpiredError:
-                raise
-            except GraphAPIError as e:
-                log.warning(
-                    "Insight '%s' unavailable for Video_ID=%s: %s", metric, video_id, e
-                )
-                salvaged[metric] = None
-        return salvaged
-
 
 # ---------------------------------------------------------------------- #
 # Module-level helpers (identical logic to the Instagram client -- same API)
 # ---------------------------------------------------------------------- #
-def _extract_metric_value(metric_obj: dict):
-    if "total_value" in metric_obj:
-        return metric_obj["total_value"].get("value")
-    values = metric_obj.get("values")
-    if values:
-        return values[-1].get("value")
-    return None
-
-
 def _chunks(items: list, size: int):
     for i in range(0, len(items), size):
         yield items[i : i + size]
