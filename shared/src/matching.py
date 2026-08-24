@@ -18,8 +18,15 @@ from datetime import datetime
 # A pairwise score below this is not even suggested.
 MIN_SUGGEST_SCORE = 0.55
 # A pairwise score at or above this is auto-confirmed into a group without
-# waiting for human review.
-AUTO_CONFIRM_SCORE = 0.82
+# waiting for human review. Lowered from 0.82 (Aug 2026) after reviewing
+# real pending matches in the dashboard's Browse tab -- e.g. a YouTube/
+# Instagram pair 10 minutes apart, duration off by 1s (within tolerance),
+# sharing 4/6 caption words scored 0.77 and sat in the review queue for no
+# real reason. 0.70 still requires meaningfully strong signal (duration
+# and date both need to be close, or caption needs to be near-identical)
+# -- see shared/src/reconfirm_pending.py to apply this to matches that
+# were already suggested before this change.
+AUTO_CONFIRM_SCORE = 0.70
 
 # Cross-posts of the same video across platforms are almost always
 # published within a few days of each other. Beyond this, date proximity
