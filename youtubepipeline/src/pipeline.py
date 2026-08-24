@@ -136,7 +136,7 @@ def _sync_to_shared_content_layer(rows: list) -> None:
     function for the full rationale -- best-effort, never fails this
     pipeline's own successful YouTube ingestion."""
     try:
-        from shared.src import content_store, matching
+        from shared.src import content_store, run_matching
     except ImportError:
         log.warning("Shared content layer not importable -- skipping cross-platform sync.")
         return
@@ -148,18 +148,12 @@ def _sync_to_shared_content_layer(rows: list) -> None:
         content_store.upsert_content_items(shared_client, content_items)
 
         ungrouped = content_store.get_ungrouped_items(shared_client)
-        if ungrouped:
-            candidates = matching.find_candidate_groups(ungrouped)
-            for candidate in candidates:
-                content_store.create_group(
-                    shared_client,
-                    content_ids=candidate["content_ids"],
-                    match_method="auto",
-                    match_confidence=candidate["confidence"],
-                    confirmed=candidate["auto_confirm"],
-                    updated_by="youtube_pipeline",
-                )
-            log.info("Cross-platform sync: %d candidate group(s) from this run.", len(candidates))
+        stats = run_matching.match_items(shared_client, ungrouped, updated_by="youtube_pipeline")
+        log.info(
+            "Cross-platform sync: %d new group(s), %d item(s) added to existing groups.",
+            stats["created"] + stats["pending"],
+            stats["added_existing"] + stats["pending_existing"],
+        )
     except Exception as e:  # noqa: BLE001 -- shared-layer issues must not fail this pipeline
         log.warning("Cross-platform content sync failed (non-fatal): %s", e)
 

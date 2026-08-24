@@ -152,6 +152,22 @@ def get_ungrouped_items(client: bigquery.Client) -> list:
     return [dict(r) for r in client.query(query).result()]
 
 
+def get_confirmed_group_members(client: bigquery.Client) -> list:
+    """Every confirmed content_group_members row, with the fields
+    matching.pair_score needs -- used to test whether a newly-ungrouped
+    item (e.g. from a platform pipeline that only just started existing)
+    actually belongs in a group formed by an earlier matching run, since
+    get_ungrouped_items() only ever sees items with zero group membership
+    and would otherwise never reconsider them."""
+    query = f"""
+    SELECT m.Group_ID, ci.Content_ID, ci.Platform, ci.Caption, ci.Publish_Date, ci.Duration
+    FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
+    WHERE m.Confirmed = TRUE
+    """
+    return [dict(r) for r in client.query(query).result()]
+
+
 def create_group(
     client: bigquery.Client,
     content_ids: list,
