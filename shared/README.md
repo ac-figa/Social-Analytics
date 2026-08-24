@@ -106,6 +106,8 @@ src/
   run_matching.py     stand-alone entrypoint: match whatever's currently ungrouped
   backfill_instagram_duration.py   stand-alone entrypoint: fill Instagram_Master.Duration
                                     from matched Facebook posts' Length
+  cleanup_deleted_content.py       stand-alone entrypoint: remove content_items (and their
+                                    group memberships) whose platform post is no longer Active
 sql/unified_content_schema.sql   reference DDL
 tests/test_matching.py            unit tests for the matching heuristic
 ```
