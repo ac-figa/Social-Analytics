@@ -431,9 +431,13 @@ def list_partnerships(client: bigquery.Client) -> list:
 
 
 def add_partnership(client: bigquery.Client, partnership: str) -> None:
+    # FROM (SELECT 1) is required -- BigQuery rejects a WHERE clause on a
+    # SELECT with no FROM at all ("Query without FROM clause cannot have
+    # a WHERE clause"), unlike some other SQL dialects.
     query = f"""
     INSERT INTO `{_table_ref(PARTNERSHIPS_TABLE)}` (Partnership, Created_At)
     SELECT @partnership, CURRENT_TIMESTAMP()
+    FROM (SELECT 1)
     WHERE NOT EXISTS (
       SELECT 1 FROM `{_table_ref(PARTNERSHIPS_TABLE)}` WHERE Partnership = @partnership
     )
@@ -453,6 +457,7 @@ def add_content_type(client: bigquery.Client, partnership: str, content_type: st
     query = f"""
     INSERT INTO `{_table_ref(PARTNERSHIP_CONTENT_TYPES_TABLE)}` (Partnership, Content_Type, Created_At)
     SELECT @partnership, @content_type, CURRENT_TIMESTAMP()
+    FROM (SELECT 1)
     WHERE NOT EXISTS (
       SELECT 1 FROM `{_table_ref(PARTNERSHIP_CONTENT_TYPES_TABLE)}`
       WHERE Partnership = @partnership AND Content_Type = @content_type
