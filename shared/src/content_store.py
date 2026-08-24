@@ -242,6 +242,58 @@ def set_membership_status(
     ).result()
 
 
+def bulk_remove_members(client: bigquery.Client, content_ids: list) -> None:
+    """Same effect as calling remove_member() once per ID, but as a single
+    DELETE -- used by reconfirm_pending.py, which can have hundreds of
+    memberships to sever in one run; issuing that many separate query
+    jobs each pay BigQuery's per-job startup overhead (a few seconds even
+    for a trivial single-row DML statement), which is what made that
+    script feel hung rather than just working. A Content_ID belongs to at
+    most one group at a time, so this is unambiguous without needing
+    Group_ID too."""
+    if not content_ids:
+        return
+    query = f"""
+    DELETE FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}`
+    WHERE Content_ID IN UNNEST(@content_ids)
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ArrayQueryParameter("content_ids", "STRING", content_ids)]
+        ),
+    ).result()
+
+
+def bulk_set_membership_status(client: bigquery.Client, updates: list) -> None:
+    """updates: [{"Content_ID":..., "Confirmed":..., "Match_Confidence":...}].
+    Bulk equivalent of set_membership_status() -- see bulk_remove_members()
+    for why this matters at the volumes reconfirm_pending.py deals with."""
+    if not updates:
+        return
+    staging_id = _table_ref("content_group_members_status_staging")
+    staging_schema = [
+        bigquery.SchemaField("Content_ID", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("Confirmed", "BOOL"),
+        bigquery.SchemaField("Match_Confidence", "FLOAT64"),
+    ]
+    client.create_table(bigquery.Table(staging_id, schema=staging_schema), exists_ok=True)
+    job_config = bigquery.LoadJobConfig(
+        schema=staging_schema,
+        write_disposition="WRITE_TRUNCATE",
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+    )
+    client.load_table_from_json(updates, staging_id, job_config=job_config).result()
+
+    merge_sql = f"""
+    MERGE `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` T
+    USING `{staging_id}` S
+    ON T.Content_ID = S.Content_ID
+    WHEN MATCHED THEN UPDATE SET T.Confirmed = S.Confirmed, T.Match_Confidence = S.Match_Confidence
+    """
+    client.query(merge_sql).result()
+
+
 def create_group(
     client: bigquery.Client,
     content_ids: list,
