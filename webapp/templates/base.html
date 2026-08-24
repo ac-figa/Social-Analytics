@@ -20,7 +20,25 @@
     {% endif %}
   </nav>
   <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-list">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
     {% block content %}{% endblock %}
   </main>
+
+  <div id="group-selection-bar" class="group-bar hidden">
+    <span id="group-selection-count"></span>
+    <button type="button" id="group-selection-apply">Group Selected</button>
+    <button type="button" id="group-selection-clear">Clear</button>
+  </div>
+  <form id="group-selection-form" method="post" action="{{ url_for('group_selected') }}" style="display:none"></form>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

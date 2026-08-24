@@ -458,6 +458,190 @@ def add_members(
     ).result()
 
 
+def bulk_create_classified_groups(client: bigquery.Client, items: list, updated_by: str) -> list:
+    """items: [{"content_id":..., "partnership":..., "content_type":...}].
+    Creates one brand-new one-member group per item -- a staging-table
+    load plus two INSERT...SELECT statements, rather than one INSERT pair
+    per group, for the same reason bulk_set_membership_status batches its
+    writes: N sequential query jobs each pay BigQuery's per-job startup
+    overhead, which is exactly what the webapp's "Apply All" bulk-classify
+    button exists to avoid when a human just filled in a whole page of
+    partnerships at once. Returns the new Group_ID for each item, same
+    order as `items`. A load job (unlike insert_rows_json) never creates a
+    streaming buffer, so the immediate INSERT...SELECT that follows -- and
+    any later UPDATE/DELETE on these rows -- isn't blocked."""
+    if not items:
+        return []
+    now = datetime.now(timezone.utc).isoformat()
+    group_ids = [str(uuid.uuid4()) for _ in items]
+
+    groups_staging = _table_ref("content_groups_bulk_staging")
+    groups_schema = [
+        bigquery.SchemaField("Group_ID", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("Partnership", "STRING"),
+        bigquery.SchemaField("Content_Type", "STRING"),
+        bigquery.SchemaField("Created_At", "TIMESTAMP"),
+        bigquery.SchemaField("Updated_At", "TIMESTAMP"),
+        bigquery.SchemaField("Updated_By", "STRING"),
+    ]
+    client.create_table(bigquery.Table(groups_staging, schema=groups_schema), exists_ok=True)
+    client.load_table_from_json(
+        [
+            {
+                "Group_ID": gid, "Partnership": it["partnership"], "Content_Type": it["content_type"],
+                "Created_At": now, "Updated_At": now, "Updated_By": updated_by,
+            }
+            for gid, it in zip(group_ids, items)
+        ],
+        groups_staging,
+        job_config=bigquery.LoadJobConfig(
+            schema=groups_schema, write_disposition="WRITE_TRUNCATE",
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        ),
+    ).result()
+    client.query(f"""
+        INSERT INTO `{_table_ref(CONTENT_GROUPS_TABLE)}`
+          (Group_ID, Partnership, Content_Type, Notes, Created_At, Updated_At, Updated_By)
+        SELECT Group_ID, Partnership, Content_Type, NULL, Created_At, Updated_At, Updated_By
+        FROM `{groups_staging}`
+    """).result()
+
+    members_staging = _table_ref("content_group_members_bulk_staging")
+    members_schema = [
+        bigquery.SchemaField("Group_ID", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("Content_ID", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("Match_Method", "STRING"),
+        bigquery.SchemaField("Confirmed", "BOOL"),
+        bigquery.SchemaField("Added_At", "TIMESTAMP"),
+    ]
+    client.create_table(bigquery.Table(members_staging, schema=members_schema), exists_ok=True)
+    client.load_table_from_json(
+        [
+            {"Group_ID": gid, "Content_ID": it["content_id"], "Match_Method": "manual", "Confirmed": True, "Added_At": now}
+            for gid, it in zip(group_ids, items)
+        ],
+        members_staging,
+        job_config=bigquery.LoadJobConfig(
+            schema=members_schema, write_disposition="WRITE_TRUNCATE",
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        ),
+    ).result()
+    client.query(f"""
+        INSERT INTO `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}`
+          (Group_ID, Content_ID, Match_Method, Match_Confidence, Confirmed, Added_At)
+        SELECT Group_ID, Content_ID, Match_Method, NULL, Confirmed, Added_At
+        FROM `{members_staging}`
+    """).result()
+
+    return group_ids
+
+
+def bulk_set_classifications(client: bigquery.Client, updates: list, updated_by: str) -> None:
+    """updates: [{"Group_ID":..., "Partnership":..., "Content_Type":...}].
+    Bulk equivalent of set_classification() -- see bulk_create_classified_groups()
+    for why this matters for the webapp's "Apply All" button."""
+    if not updates:
+        return
+    staging_id = _table_ref("content_groups_classify_staging")
+    staging_schema = [
+        bigquery.SchemaField("Group_ID", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("Partnership", "STRING"),
+        bigquery.SchemaField("Content_Type", "STRING"),
+    ]
+    client.create_table(bigquery.Table(staging_id, schema=staging_schema), exists_ok=True)
+    client.load_table_from_json(
+        updates, staging_id,
+        job_config=bigquery.LoadJobConfig(
+            schema=staging_schema, write_disposition="WRITE_TRUNCATE",
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        ),
+    ).result()
+    client.query(
+        f"""
+        MERGE `{_table_ref(CONTENT_GROUPS_TABLE)}` T
+        USING `{staging_id}` S
+        ON T.Group_ID = S.Group_ID
+        WHEN MATCHED THEN UPDATE SET T.Partnership = S.Partnership, T.Content_Type = S.Content_Type,
+          T.Updated_At = CURRENT_TIMESTAMP(), T.Updated_By = @updated_by
+        """,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by)]
+        ),
+    ).result()
+
+
+def bulk_member_platform_ids(client: bigquery.Client, group_ids: list) -> dict:
+    """{Group_ID: [(Platform, Platform_Post_ID), ...]} for every member of
+    every group in group_ids, in one query -- used to propagate a bulk
+    classification change to each member's own platform *_classifications
+    table without querying per-group."""
+    if not group_ids:
+        return {}
+    query = f"""
+    SELECT m.Group_ID, ci.Platform, ci.Platform_Post_ID
+    FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
+    WHERE m.Group_ID IN UNNEST(@group_ids)
+    """
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ArrayQueryParameter("group_ids", "STRING", group_ids)]
+        ),
+    ).result()
+    result: dict = {}
+    for r in rows:
+        result.setdefault(r["Group_ID"], []).append((r["Platform"], r["Platform_Post_ID"]))
+    return result
+
+
+def get_platform_and_group_for_content_ids(client: bigquery.Client, content_ids: list) -> dict:
+    """{Content_ID: {"Platform":..., "Group_ID": str or None}} for a list
+    of raw content_ids -- used by the webapp's manual "Group Selected"
+    feature to check platform-collision and existing-group state for
+    whatever a human just checked in the Browse/Classify tables, in one
+    query rather than one per item."""
+    if not content_ids:
+        return {}
+    query = f"""
+    SELECT ci.Content_ID, ci.Platform, m.Group_ID
+    FROM `{_table_ref(CONTENT_ITEMS_TABLE)}` ci
+    LEFT JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m ON ci.Content_ID = m.Content_ID
+    WHERE ci.Content_ID IN UNNEST(@content_ids)
+    """
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ArrayQueryParameter("content_ids", "STRING", content_ids)]
+        ),
+    ).result()
+    return {r["Content_ID"]: {"Platform": r["Platform"], "Group_ID": r["Group_ID"]} for r in rows}
+
+
+def get_group_platforms(client: bigquery.Client, group_ids: list) -> dict:
+    """{Group_ID: {Platform, ...}} for a list of group_ids -- the platform
+    set of each group's current members, used to validate that a manual
+    merge would never put two same-platform items in one group."""
+    if not group_ids:
+        return {}
+    query = f"""
+    SELECT m.Group_ID, ci.Platform
+    FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
+    WHERE m.Group_ID IN UNNEST(@group_ids)
+    """
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ArrayQueryParameter("group_ids", "STRING", group_ids)]
+        ),
+    ).result()
+    result: dict = {}
+    for r in rows:
+        result.setdefault(r["Group_ID"], set()).add(r["Platform"])
+    return result
+
+
 def remove_member(client: bigquery.Client, group_id: str, content_id: str) -> None:
     """Splits one content_item back out of a group -- how a human corrects
     a wrong auto-match, e.g. after find_candidate_groups over-clusters."""
@@ -590,7 +774,7 @@ def list_classification_queue(
       SELECT
         g.Group_ID, g.Partnership, g.Content_Type,
         ARRAY_AGG(
-          STRUCT(ci.Platform AS Platform, ci.Caption AS Caption, ci.Publish_Date AS Publish_Date,
+          STRUCT(ci.Content_ID AS Content_ID, ci.Platform AS Platform, ci.Caption AS Caption, ci.Publish_Date AS Publish_Date,
                  ci.Permalink AS Permalink, ci.Views AS Views, ci.Platform_Post_ID AS Platform_Post_ID)
           ORDER BY ci.Platform
         ) AS Members,
@@ -603,7 +787,7 @@ def list_classification_queue(
     ungrouped AS (
       SELECT
         CAST(NULL AS STRING) AS Group_ID, CAST(NULL AS STRING) AS Partnership, CAST(NULL AS STRING) AS Content_Type,
-        [STRUCT(ci.Platform AS Platform, ci.Caption AS Caption, ci.Publish_Date AS Publish_Date,
+        [STRUCT(ci.Content_ID AS Content_ID, ci.Platform AS Platform, ci.Caption AS Caption, ci.Publish_Date AS Publish_Date,
                 ci.Permalink AS Permalink, ci.Views AS Views, ci.Platform_Post_ID AS Platform_Post_ID)] AS Members,
         ci.Publish_Date AS Latest_Date
       FROM `{_table_ref(CONTENT_ITEMS_TABLE)}` ci

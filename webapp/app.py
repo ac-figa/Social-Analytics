@@ -10,7 +10,7 @@ needs google-cloud-bigquery, flask, python-dotenv):
 
 Then open http://127.0.0.1:5050 -- see README.md for full setup.
 """
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from src import config, db, sync
@@ -93,13 +93,60 @@ def classify():
     content_id = request.form.get("content_id") or None
     platform = request.form.get("platform") or None
     platform_post_id = request.form.get("platform_post_id") or None
-    partnership = request.form.get("partnership", "").strip()
-    content_type = request.form.get("content_type", "").strip() or "Unclassified"
+
+    if request.form.get("action") == "organic":
+        # One-click "not a partnership" classification -- Organic is just a
+        # regular partnership entry (so it shows up in reporting/filters
+        # like any other), the quick button just skips typing it in.
+        partnership = "Organic"
+        content_type = request.form.get("content_type", "").strip() or "Organic"
+    else:
+        partnership = request.form.get("partnership", "").strip()
+        content_type = request.form.get("content_type", "").strip() or "Unclassified"
 
     if partnership:
         db.classify(client, group_id, content_id, platform, platform_post_id, partnership, content_type)
         db.add_content_type(client, partnership, content_type)
 
+    return redirect(request.referrer or url_for("queue"))
+
+
+@app.route("/classify/bulk", methods=["POST"])
+def classify_bulk():
+    """The "Apply All" button -- app.js gathers every filled-in row from
+    the classify queue client-side and POSTs them all here in one request,
+    instead of one page-reloading form submit per row."""
+    client = db.get_client()
+    payload = request.get_json(silent=True) or {}
+    rows = []
+    for r in payload.get("rows", []):
+        partnership = (r.get("partnership") or "").strip()
+        if not partnership:
+            continue
+        rows.append(
+            {
+                "group_id": r.get("group_id") or None,
+                "content_id": r.get("content_id") or None,
+                "platform": r.get("platform") or None,
+                "platform_post_id": r.get("platform_post_id") or None,
+                "partnership": partnership,
+                "content_type": (r.get("content_type") or "").strip() or "Unclassified",
+            }
+        )
+
+    applied = db.classify_bulk(client, rows) if rows else 0
+    for r in rows:
+        db.add_content_type(client, r["partnership"], r["content_type"])
+
+    return jsonify({"applied": applied})
+
+
+@app.route("/group", methods=["POST"])
+def group_selected():
+    client = db.get_client()
+    selections = request.form.getlist("selections")
+    ok, message = db.manual_group(client, selections)
+    flash(message, "success" if ok else "error")
     return redirect(request.referrer or url_for("queue"))
 
 

@@ -98,6 +98,146 @@ def classify(client: bigquery.Client, group_id: str, content_id: str, platform: 
     return group_id
 
 
+def _propagate_bulk_to_platform(client: bigquery.Client, platform: str, items: list) -> None:
+    """items: [{"post_id":..., "partnership":..., "content_type":...}].
+    Bulk equivalent of _propagate_to_platform() -- one staging-table load
+    plus one MERGE per platform, instead of one MERGE per classified item,
+    for the webapp's "Apply All" button."""
+    if not items:
+        return
+    p = config.PLATFORM_CONFIG[platform]
+    table_ref = _classifications_table_ref(platform)
+    id_column = p["id_column"]
+    staging_id = f"{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.{platform.lower()}_classify_bulk_staging"
+    staging_schema = [
+        bigquery.SchemaField(id_column, "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("Partnership", "STRING"),
+        bigquery.SchemaField("Content_Type", "STRING"),
+    ]
+    client.create_table(bigquery.Table(staging_id, schema=staging_schema), exists_ok=True)
+    client.load_table_from_json(
+        [{id_column: it["post_id"], "Partnership": it["partnership"], "Content_Type": it["content_type"]} for it in items],
+        staging_id,
+        job_config=bigquery.LoadJobConfig(
+            schema=staging_schema, write_disposition="WRITE_TRUNCATE",
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        ),
+    ).result()
+    client.query(
+        f"""
+        MERGE `{table_ref}` T
+        USING `{staging_id}` S
+        ON T.{id_column} = S.{id_column}
+        WHEN MATCHED THEN UPDATE SET
+          Partnership = S.Partnership, Content_Type = S.Content_Type,
+          Updated_At = CURRENT_TIMESTAMP(), Updated_By = @updated_by
+        WHEN NOT MATCHED THEN INSERT ({id_column}, Partnership, Content_Type, Updated_At, Updated_By)
+          VALUES (S.{id_column}, S.Partnership, S.Content_Type, CURRENT_TIMESTAMP(), @updated_by)
+        """,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("updated_by", "STRING", UPDATED_BY)]
+        ),
+    ).result()
+
+
+def classify_bulk(client: bigquery.Client, rows: list) -> int:
+    """rows: [{"group_id", "content_id", "platform", "platform_post_id",
+    "partnership", "content_type"}] -- the webapp's "Apply All" button.
+    Same effect as calling classify() once per row, but batched: one
+    bulk group-creation pass, one bulk classification-update pass, and one
+    MERGE per platform for propagation, instead of ~3 query jobs per row.
+    Returns how many rows were applied."""
+    if not rows:
+        return 0
+
+    new_rows = [r for r in rows if not r["group_id"]]
+    existing_rows = [r for r in rows if r["group_id"]]
+
+    if new_rows:
+        new_group_ids = content_store.bulk_create_classified_groups(
+            client,
+            [{"content_id": r["content_id"], "partnership": r["partnership"], "content_type": r["content_type"]} for r in new_rows],
+            updated_by=UPDATED_BY,
+        )
+        for r, gid in zip(new_rows, new_group_ids):
+            r["group_id"] = gid
+
+    if existing_rows:
+        content_store.bulk_set_classifications(
+            client,
+            [{"Group_ID": r["group_id"], "Partnership": r["partnership"], "Content_Type": r["content_type"]} for r in existing_rows],
+            updated_by=UPDATED_BY,
+        )
+
+    member_map = content_store.bulk_member_platform_ids(client, [r["group_id"] for r in existing_rows])
+
+    by_platform: dict = {}
+    for r in rows:
+        members = member_map.get(r["group_id"]) or [(r["platform"], r["platform_post_id"])]
+        for plat, post_id in members:
+            by_platform.setdefault(plat, []).append(
+                {"post_id": post_id, "partnership": r["partnership"], "content_type": r["content_type"]}
+            )
+    for plat, items in by_platform.items():
+        _propagate_bulk_to_platform(client, plat, items)
+
+    return len(rows)
+
+
+def manual_group(client: bigquery.Client, selections: list) -> tuple:
+    """selections: tokens of the form 'group:<Group_ID>' or 'item:<Content_ID>',
+    from whatever a human checked across the Browse/Classify tables. Merges
+    them all into one group -- reuses content_store.merge_groups() for any
+    that are already in different groups, and add_members()/create_group()
+    for raw ungrouped items. Returns (ok, message) for the caller to flash.
+    Refuses (without writing anything) if the combined set would put two
+    items from the same platform in one group, or if fewer than 2 distinct
+    pieces of content were selected."""
+    group_ids, content_ids = set(), set()
+    for token in selections:
+        kind, _, value = token.partition(":")
+        if kind == "group" and value:
+            group_ids.add(value)
+        elif kind == "item" and value:
+            content_ids.add(value)
+
+    if len(group_ids) + len(content_ids) < 2:
+        return False, "Select at least 2 items (from different platforms) to group."
+
+    platforms_by_group = content_store.get_group_platforms(client, list(group_ids))
+    items_info = content_store.get_platform_and_group_for_content_ids(client, list(content_ids))
+
+    all_platforms: list = []
+    for gid in group_ids:
+        all_platforms.extend(platforms_by_group.get(gid, set()))
+    for cid in content_ids:
+        info = items_info.get(cid)
+        if info:
+            all_platforms.append(info["Platform"])
+
+    seen, dupes = set(), set()
+    for p in all_platforms:
+        (dupes if p in seen else seen).add(p)
+    if dupes:
+        return False, f"Can't group two {'/'.join(sorted(dupes))} items together -- pick at most one per platform."
+
+    if not group_ids:
+        content_store.create_group(
+            client, content_ids=list(content_ids), match_method="manual", confirmed=True, updated_by=UPDATED_BY,
+        )
+    else:
+        keep_group_id = sorted(group_ids)[0]
+        for other in group_ids:
+            if other != keep_group_id:
+                content_store.merge_groups(client, keep_group_id, other)
+        if content_ids:
+            content_store.add_members(
+                client, keep_group_id, list(content_ids), match_method="manual", match_confidence=None, confirmed=True,
+            )
+
+    return True, f"Grouped {len(group_ids) + len(content_ids)} item(s) together."
+
+
 def _member_platform_ids(client: bigquery.Client, group_id: str) -> list:
     query = f"""
     SELECT ci.Platform, ci.Platform_Post_ID

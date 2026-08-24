@@ -14,6 +14,7 @@
     <table class="browse-table">
       <thead>
         <tr>
+          <th></th>
           <th>Caption</th>
           <th>Published</th>
           <th>Duration</th>
@@ -27,6 +28,11 @@
       <tbody>
         {% for item in items %}
           <tr>
+            <td>
+              <input type="checkbox" class="group-checkbox"
+                data-token="{{ 'group:' + item.Group_ID if item.Group_ID else 'item:' + item.Content_ID }}"
+                data-label="{{ platform }}: {{ (item.Caption or '(no caption)')[:40] }}">
+            </td>
             <td class="caption-cell"><a href="{{ item.Permalink }}" target="_blank" rel="noopener">{{ (item.Caption or '(no caption)')[:80] }}</a></td>
             <td>{{ item.Publish_Date.strftime('%Y-%m-%d %H:%M') if item.Publish_Date else '' }}</td>
             <td>{{ item.Duration|round(1) if item.Duration is not none else '—' }}</td>
@@ -45,7 +51,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8" class="empty">No data yet for {{ platform }} -- run a Sync first.</td></tr>
+          <tr><td colspan="9" class="empty">No data yet for {{ platform }} -- run a Sync first.</td></tr>
         {% endfor %}
       </tbody>
     </table>

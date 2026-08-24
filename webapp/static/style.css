@@ -210,6 +210,55 @@ button:disabled { background: var(--muted); cursor: default; }
 }
 .error { color: var(--red); font-weight: 600; }
 
+.flash-list { margin-bottom: 16px; }
+.flash {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.flash-success { background: #e3f6ea; color: var(--green); }
+.flash-error { background: #fbe9e8; color: var(--red); }
+
+.apply-all-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.apply-all-bar button { background: var(--green); }
+.apply-all-bar button:hover { background: #157a45; }
+
+.row-select { display: flex; align-items: center; padding-right: 4px; flex-shrink: 0; }
+.row-select input { width: 16px; height: 16px; cursor: pointer; }
+
+.organic-btn { background: var(--muted); }
+.organic-btn:hover { background: #55585e; }
+
+.group-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--text);
+  color: var(--bg);
+  padding: 10px 16px;
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+  z-index: 50;
+}
+.group-bar.hidden { display: none; }
+.group-bar button {
+  background: var(--accent);
+  padding: 6px 12px;
+  font-size: 12px;
+}
+#group-selection-clear { background: transparent; border: 1px solid var(--bg); color: var(--bg); }
+
 .login-page {
   max-width: 420px;
   margin: 100px auto;
