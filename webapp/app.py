@@ -89,7 +89,11 @@ def browse():
 @app.route("/pending")
 def pending():
     client = db.get_client()
-    return render_template("pending.html", matches=db.list_pending_matches(client))
+    months = request.args.get("months", default=9, type=int)
+    if months <= 0:
+        months = None
+    matches = db.list_pending_matches(client, months=months)
+    return render_template("pending.html", matches=matches, months=months)
 
 
 @app.route("/pending/confirm", methods=["POST"])

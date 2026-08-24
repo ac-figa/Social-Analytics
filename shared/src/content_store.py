@@ -435,10 +435,14 @@ def list_classification_queue(
     return results[:limit]
 
 
-def list_pending_matches(client: bigquery.Client) -> list:
+def list_pending_matches(client: bigquery.Client, since=None) -> list:
     """Every unconfirmed (Confirmed=False) group membership, with the full
     group's members for context -- what the dashboard's review queue
-    shows so a human can accept or reject each auto-suggested match."""
+    shows so a human can accept or reject each auto-suggested match.
+    since: an optional datetime -- only pending candidates published on or
+    after this are included, so very old backlog doesn't drown out recent,
+    actionable ones."""
+    since_clause = "AND ci.Publish_Date >= @since" if since is not None else ""
     query = f"""
     SELECT
       pending.Group_ID, pending.Content_ID AS Pending_Content_ID,
@@ -456,11 +460,17 @@ def list_pending_matches(client: bigquery.Client) -> list:
       AND other.Content_ID != pending.Content_ID
     JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` other_ci ON other.Content_ID = other_ci.Content_ID
     WHERE pending.Confirmed = FALSE
+    {since_clause}
     GROUP BY pending.Group_ID, pending.Content_ID, pending.Match_Confidence,
       ci.Platform, ci.Caption, ci.Publish_Date, ci.Permalink
     ORDER BY pending.Match_Confidence DESC
     """
-    rows = list(client.query(query).result())
+    job_config = None
+    if since is not None:
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("since", "TIMESTAMP", since)]
+        )
+    rows = list(client.query(query, job_config=job_config).result())
     return [
         {
             "Group_ID": r["Group_ID"],

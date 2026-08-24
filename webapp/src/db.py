@@ -7,6 +7,7 @@ instagram_master/facebook_master/youtube_master/tiktok_master (each
 pipeline's own reporting surface) reflect it too, not just content_groups.
 """
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -132,8 +133,11 @@ def _instagram_collab_post_ids(client: bigquery.Client) -> set:
     return {r["Post_ID"] for r in client.query(query).result()}
 
 
-def list_pending_matches(client: bigquery.Client) -> list:
-    return content_store.list_pending_matches(client)
+def list_pending_matches(client: bigquery.Client, months: int = None) -> list:
+    since = None
+    if months is not None:
+        since = datetime.now(timezone.utc) - timedelta(days=months * 30)
+    return content_store.list_pending_matches(client, since=since)
 
 
 def confirm_pending(client: bigquery.Client, group_id: str, content_id: str) -> None:

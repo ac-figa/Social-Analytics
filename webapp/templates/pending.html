@@ -4,8 +4,15 @@
   <h1>Pending Matches</h1>
   <p class="subtitle">Auto-suggested cross-platform matches that scored below the auto-confirm threshold. Review each one and accept or reject it.</p>
 
+  <div class="filters">
+    {% for m in [3, 6, 9, 12] %}
+      <a class="filter-toggle {{ 'active' if months == m else '' }}" href="{{ url_for('pending', months=m) }}">Last {{ m }} months</a>
+    {% endfor %}
+    <a class="filter-toggle {{ 'active' if months is none else '' }}" href="{{ url_for('pending', months=0) }}">All time</a>
+  </div>
+
   {% if not matches %}
-    <p class="empty">Nothing pending review right now.</p>
+    <p class="empty">Nothing pending in this time range{{ '.' if months is none else ' -- try "All time".' }}</p>
   {% endif %}
 
   <div class="pending-list">
