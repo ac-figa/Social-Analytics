@@ -94,6 +94,16 @@ class TokenExpiredError(GraphAPIError):
     """Fatal: the access token is invalid/expired or lacks permissions."""
 
 
+class RateLimitedError(GraphAPIError):
+    """Fatal for this run: Meta's named app/user/page-level rate-limit
+    codes (4/17/32/613) mean a throttle window that resets on the order
+    of an hour, not seconds -- confirmed live (Aug 2026) that retrying
+    with the usual short exponential backoff (tops out at 16s) just burns
+    ~2 minutes per rate-limited post finding nothing, for every one of
+    hundreds of posts, without ever actually clearing. Raised immediately,
+    no retry, so the run aborts fast with a clear message instead."""
+
+
 class FacebookGraphClient:
     def __init__(self, access_token=None, page_id=None, base_url=None):
         self.access_token = access_token or config.META_ACCESS_TOKEN
@@ -258,7 +268,7 @@ class FacebookGraphClient:
             try:
                 payload = self._get(f"{composite_id}/insights", {"metric": metric})
                 salvaged.update(_lifetime_values(payload.get("data", [])))
-            except TokenExpiredError:
+            except (TokenExpiredError, RateLimitedError):
                 raise
             except GraphAPIError as e:
                 log.warning(
@@ -324,9 +334,16 @@ def _raise_or_backoff(error, status_code, attempt, post_id):
             post_id=post_id,
         )
 
-    retryable = code in RATE_LIMIT_ERROR_CODES or status_code == 429 or (
-        status_code and status_code >= 500
-    )
+    if code in RATE_LIMIT_ERROR_CODES:
+        raise RateLimitedError(
+            f"Meta rate limit hit (code={code}): {message}. This is an app/user/page-level "
+            f"throttle that resets in roughly an hour, not something a short retry clears -- "
+            f"wait and re-run rather than retrying immediately.",
+            code=code,
+            post_id=post_id,
+        )
+
+    retryable = status_code == 429 or (status_code and status_code >= 500)
     if not retryable or attempt >= MAX_RETRIES:
         raise GraphAPIError(message, code=code, post_id=post_id)
 

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import bigquery_store, config, suggestions, transform
-from .graph_client import FacebookGraphClient, GraphAPIError, TokenExpiredError
+from .graph_client import FacebookGraphClient, GraphAPIError, RateLimitedError, TokenExpiredError
 
 # See instagramanalyticspipeline/src/pipeline.py for why this path math:
 # src/ -> facebookpipeline/ -> repo root, which also contains shared/.
@@ -76,8 +76,19 @@ def run(full_refresh: bool = False) -> int:
             )
 
     refresh_ids = [v["id"] for v in refresh_items]
-    details = client.get_video_details(refresh_ids)
-    insights = client.get_post_insights(details)
+    try:
+        details = client.get_video_details(refresh_ids)
+        insights = client.get_post_insights(details)
+    except RateLimitedError as e:
+        log.error(
+            "Fatal: %s Nothing was upserted this run -- re-run the same command "
+            "(with --full if that's what you used) once the rate limit clears.",
+            e,
+        )
+        return 1
+    except TokenExpiredError as e:
+        log.error("Fatal: %s", e)
+        return 1
 
     bq_client = bigquery_store.get_client()
     bigquery_store.ensure_schema(bq_client)
@@ -123,7 +134,7 @@ def run(full_refresh: bool = False) -> int:
             )
 
             rows.append(row)
-        except TokenExpiredError:
+        except (TokenExpiredError, RateLimitedError):
             raise
         except Exception as e:  # noqa: BLE001 -- one bad video must not kill the run
             log.error("Failed to process Video_ID=%s: %s", video_id, e)

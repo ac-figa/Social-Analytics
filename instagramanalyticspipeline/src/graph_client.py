@@ -86,6 +86,16 @@ class TokenExpiredError(GraphAPIError):
     """Fatal: the access token is invalid/expired or lacks permissions."""
 
 
+class RateLimitedError(GraphAPIError):
+    """Fatal for this run: Meta's named app/user/page-level rate-limit
+    codes (4/17/32/613) mean a throttle window that resets on the order
+    of an hour, not seconds -- confirmed live (Aug 2026, same Graph API,
+    facebookpipeline) that retrying with the usual short exponential
+    backoff (tops out at 16s) just burns time finding nothing, for every
+    one of hundreds of posts, without ever actually clearing. Raised
+    immediately, no retry, so the run aborts fast with a clear message."""
+
+
 class InstagramGraphClient:
     def __init__(self, access_token=None, ig_user_id=None, base_url=None):
         self.access_token = access_token or config.META_ACCESS_TOKEN
@@ -251,7 +261,7 @@ class InstagramGraphClient:
                 payload = self._get(f"{mid}/insights", {"metric": metric})
                 data = payload.get("data", [])
                 salvaged[metric] = _extract_metric_value(data[0]) if data else None
-            except TokenExpiredError:
+            except (TokenExpiredError, RateLimitedError):
                 raise
             except GraphAPIError as e:
                 log.warning(
@@ -267,6 +277,8 @@ class InstagramGraphClient:
         try:
             payload = self._get(f"{media_id}/collaborators", {})
             return [u.get("username") for u in payload.get("data", []) if u.get("username")]
+        except (TokenExpiredError, RateLimitedError):
+            raise
         except GraphAPIError as e:
             log.debug("No collaborator data for Post_ID=%s: %s", media_id, e)
             return []
@@ -333,9 +345,16 @@ def _raise_or_backoff(error, status_code, attempt, post_id):
             post_id=post_id,
         )
 
-    retryable = code in RATE_LIMIT_ERROR_CODES or status_code == 429 or (
-        status_code and status_code >= 500
-    )
+    if code in RATE_LIMIT_ERROR_CODES:
+        raise RateLimitedError(
+            f"Meta rate limit hit (code={code}): {message}. This is an app/user/page-level "
+            f"throttle that resets in roughly an hour, not something a short retry clears -- "
+            f"wait and re-run rather than retrying immediately.",
+            code=code,
+            post_id=post_id,
+        )
+
+    retryable = status_code == 429 or (status_code and status_code >= 500)
     if not retryable or attempt >= MAX_RETRIES:
         raise GraphAPIError(message, code=code, post_id=post_id)
 

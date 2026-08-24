@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import bigquery_store, config, suggestions, transform
-from .graph_client import GraphAPIError, InstagramGraphClient, TokenExpiredError
+from .graph_client import GraphAPIError, InstagramGraphClient, RateLimitedError, TokenExpiredError
 
 # Repo root (two levels up from this file: src/ -> instagramanalyticspipeline/
 # -> repo root) so the shared cross-platform content layer is importable
@@ -82,8 +82,19 @@ def run(full_refresh: bool = False) -> int:
             )
 
     refresh_ids = [m["id"] for m in refresh_items]
-    details = client.get_media_details(refresh_ids)
-    insights = client.get_media_insights(refresh_items)
+    try:
+        details = client.get_media_details(refresh_ids)
+        insights = client.get_media_insights(refresh_items)
+    except RateLimitedError as e:
+        log.error(
+            "Fatal: %s Nothing was upserted this run -- re-run the same command "
+            "(with --full if that's what you used) once the rate limit clears.",
+            e,
+        )
+        return 1
+    except TokenExpiredError as e:
+        log.error("Fatal: %s", e)
+        return 1
 
     bq_client = bigquery_store.get_client()
     bigquery_store.ensure_schema(bq_client)
@@ -93,43 +104,55 @@ def run(full_refresh: bool = False) -> int:
     rows = []
     failed_post_ids = []
 
-    for item in refresh_items:
-        post_id = item["id"]
-        try:
-            detail = details.get(post_id)
-            if detail is None:
-                log.warning("Skipping Post_ID=%s: no media detail available.", post_id)
+    try:
+        for item in refresh_items:
+            post_id = item["id"]
+            try:
+                detail = details.get(post_id)
+                if detail is None:
+                    log.warning("Skipping Post_ID=%s: no media detail available.", post_id)
+                    failed_post_ids.append(post_id)
+                    continue
+
+                collaborators = []
+                if item.get("media_product_type") == "REELS":
+                    collaborators = client.get_collaborators(post_id)
+
+                row = transform.build_master_row(
+                    media_detail=detail,
+                    insights=insights.get(post_id),
+                    collaborators=collaborators,
+                    account_info=account_info,
+                )
+
+                existing = classifications.get(post_id, {})
+                row["Partnership"] = existing.get("Partnership") or "Unclassified"
+                row["Content_Type"] = existing.get("Content_Type") or "Unclassified"
+                row["Suggested_Partnership"] = suggestions.suggest_partnership(
+                    detail.get("caption"), collaborators, brand_map
+                )
+                # User-owned free-text fields: only meaningful default on first
+                # INSERT -- the MERGE never overwrites them on existing rows.
+                row["Data_Comment"] = None
+                row["Data"] = None
+
+                rows.append(row)
+            except (TokenExpiredError, RateLimitedError):
+                raise
+            except Exception as e:  # noqa: BLE001 -- one bad post must not kill the run
+                log.error("Failed to process Post_ID=%s: %s", post_id, e)
                 failed_post_ids.append(post_id)
-                continue
-
-            collaborators = []
-            if item.get("media_product_type") == "REELS":
-                collaborators = client.get_collaborators(post_id)
-
-            row = transform.build_master_row(
-                media_detail=detail,
-                insights=insights.get(post_id),
-                collaborators=collaborators,
-                account_info=account_info,
-            )
-
-            existing = classifications.get(post_id, {})
-            row["Partnership"] = existing.get("Partnership") or "Unclassified"
-            row["Content_Type"] = existing.get("Content_Type") or "Unclassified"
-            row["Suggested_Partnership"] = suggestions.suggest_partnership(
-                detail.get("caption"), collaborators, brand_map
-            )
-            # User-owned free-text fields: only meaningful default on first
-            # INSERT -- the MERGE never overwrites them on existing rows.
-            row["Data_Comment"] = None
-            row["Data"] = None
-
-            rows.append(row)
-        except TokenExpiredError:
-            raise
-        except Exception as e:  # noqa: BLE001 -- one bad post must not kill the run
-            log.error("Failed to process Post_ID=%s: %s", post_id, e)
-            failed_post_ids.append(post_id)
+    except RateLimitedError as e:
+        log.error(
+            "Fatal: %s %d post(s) already upserted before the limit hit; the rest "
+            "weren't touched -- re-run the same command once the rate limit clears.",
+            e,
+            len(rows),
+        )
+        return 1
+    except TokenExpiredError as e:
+        log.error("Fatal: %s", e)
+        return 1
 
     bigquery_store.upsert_master_rows(bq_client, rows)
     # Uses every post still listed by the API (all_media_ids), not just the
