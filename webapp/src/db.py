@@ -144,6 +144,36 @@ def reject_pending(client: bigquery.Client, group_id: str, content_id: str) -> N
     content_store.remove_member(client, group_id, content_id)
 
 
+def list_latest_items(client: bigquery.Client, platform: str, limit: int = 50) -> list:
+    """The 50 most recently published content_items for one platform,
+    with whether each one is currently in a group (and if so, which) --
+    lets you see the raw synced data (caption/duration/date as the
+    matcher actually sees them) next to real match outcomes, to spot why
+    two platforms aren't linking up."""
+    query = f"""
+    SELECT
+      ci.Content_ID, ci.Platform_Post_ID, ci.Caption, ci.Publish_Date, ci.Duration,
+      ci.Views, ci.Likes, ci.Comments, ci.Shares, ci.Permalink,
+      m.Group_ID, m.Confirmed
+    FROM `{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.content_items` ci
+    LEFT JOIN `{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.content_group_members` m
+      ON ci.Content_ID = m.Content_ID
+    WHERE ci.Platform = @platform
+    ORDER BY ci.Publish_Date DESC
+    LIMIT @limit
+    """
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("platform", "STRING", platform),
+                bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            ]
+        ),
+    ).result()
+    return [dict(r) for r in rows]
+
+
 def list_partnerships(client: bigquery.Client) -> list:
     return content_store.list_partnerships(client)
 

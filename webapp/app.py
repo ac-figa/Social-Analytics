@@ -73,6 +73,19 @@ def add_content_type():
     return redirect(url_for("partnerships"))
 
 
+PLATFORMS = ["Instagram", "Facebook", "YouTube", "TikTok"]
+
+
+@app.route("/browse")
+def browse():
+    platform = request.args.get("platform", "Instagram")
+    if platform not in PLATFORMS:
+        platform = "Instagram"
+    client = db.get_client()
+    items = db.list_latest_items(client, platform, limit=50)
+    return render_template("browse.html", items=items, platform=platform, platforms=PLATFORMS)
+
+
 @app.route("/pending")
 def pending():
     client = db.get_client()

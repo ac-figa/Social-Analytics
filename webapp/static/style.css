@@ -159,6 +159,42 @@ button:disabled { background: var(--muted); cursor: default; }
 .pending-actions .accept { background: var(--green); }
 .pending-actions .reject { background: var(--red); }
 
+.browse-table-wrap { overflow-x: auto; }
+.browse-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.browse-table th, .browse-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.browse-table th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.browse-table .caption-cell {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browse-table .caption-cell a { color: var(--text); text-decoration: none; }
+.browse-table .caption-cell a:hover { text-decoration: underline; }
+.browse-table tr:last-child td { border-bottom: none; }
+
+.match-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.match-confirmed { background: #e3f6ea; color: var(--green); }
+.match-pending { background: #fff4d6; color: #a5720a; }
+.match-none { background: #fbe9e8; color: var(--red); }
+
 #sync-status { margin-top: 20px; }
 #sync-log {
   background: #16171a;
@@ -180,4 +216,7 @@ button:disabled { background: var(--muted); cursor: default; }
     --text: #eaeaec;
     --muted: #97979e;
   }
+  .match-confirmed { background: #163d28; color: #4ade80; }
+  .match-pending { background: #3d3212; color: #fbbf24; }
+  .match-none { background: #3d1f1d; color: #f87171; }
 }
