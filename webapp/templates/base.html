@@ -13,6 +13,11 @@
     <a href="{{ url_for('pending') }}">Pending Matches</a>
     <a href="{{ url_for('partnerships') }}">Partnerships</a>
     <a href="{{ url_for('sync_page') }}">Sync</a>
+    {% if session.get('user_email') %}
+      <span class="nav-spacer"></span>
+      <span class="nav-user">{{ session['user_email'] }}</span>
+      <a href="{{ url_for('logout') }}">Sign out</a>
+    {% endif %}
   </nav>
   <main>
     {% block content %}{% endblock %}

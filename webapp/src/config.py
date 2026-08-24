@@ -27,6 +27,17 @@ def _require(name: str) -> str:
 BQ_PROJECT_ID = _require("BQ_PROJECT_ID")
 SHARED_BQ_DATASET = os.environ.get("SHARED_BQ_DATASET", "social_analytics")
 
+# Google sign-in (see src/auth.py). Only required when actually deployed
+# somewhere reachable off your own machine -- running locally with
+# `python3 app.py` never needs these at all (see app.py: auth is skipped
+# entirely if GOOGLE_CLIENT_ID is unset).
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+ALLOWED_EMAILS = {
+    e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()
+}
+FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-only-insecure-key-change-me")
+
 # Each platform's own dataset + classifications table + master table's ID
 # column -- used to propagate a group's Partnership/Content_Type down into
 # every member platform's own *_classifications table when the dashboard
@@ -65,6 +76,16 @@ PIPELINE_DIRS = {
     "TikTok": _REPO_ROOT / "tiktokpipeline",
 }
 SHARED_DIR = _REPO_ROOT / "shared"
+
+# The Cloud Run deployment (see deploy/README.md) only ever copies
+# webapp/ and shared/ into the image -- never the four pipeline
+# directories or their .env files, since Sync would otherwise need every
+# platform's live API credentials baked into a container reachable from
+# the internet. Detecting their absence is how the app tells "running
+# locally" apart from "deployed" without a separate env var to keep in
+# sync -- Sync just disables itself with an explanation instead of
+# failing confusingly.
+SYNC_AVAILABLE = all(d.is_dir() for d in PIPELINE_DIRS.values())
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s: %(message)s")

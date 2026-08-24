@@ -1,18 +1,71 @@
 """
-Local classification dashboard.
+Classification dashboard. Runs locally (python3 app.py) or deployed to
+Cloud Run behind Google sign-in (see deploy/README.md) -- same codebase,
+same routes either way.
 
-Run with the same Python environment used for the pipelines (it needs
-google-cloud-bigquery, flask, python-dotenv):
+Run locally with the same Python environment used for the pipelines (it
+needs google-cloud-bigquery, flask, python-dotenv):
 
   python3 app.py
 
 Then open http://127.0.0.1:5050 -- see README.md for full setup.
 """
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, redirect, render_template, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from src import config, db, sync
 
 app = Flask(__name__)
+app.secret_key = config.FLASK_SECRET_KEY
+# Cloud Run terminates HTTPS and proxies plain HTTP to the container --
+# without this, Flask thinks every request is http:// (wrong scheme for
+# the OAuth redirect_uri, and for any generated absolute URL). No-op when
+# running locally with no proxy in front.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# Auth is only enforced when GOOGLE_CLIENT_ID is actually configured --
+# running locally (webapp/README.md's setup) never sets it, so local dev
+# stays login-free. See src/auth.py and deploy/README.md.
+_AUTH_ENABLED = bool(config.GOOGLE_CLIENT_ID)
+if _AUTH_ENABLED:
+    from src import auth
+
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    auth.oauth.init_app(app)
+
+    @app.before_request
+    def _require_login():
+        if request.endpoint in ("login", "login_start", "auth_callback", "static") or auth.is_logged_in():
+            return None
+        return redirect(url_for("login"))
+
+    @app.route("/login")
+    def login():
+        return render_template("login.html", denied=False)
+
+    @app.route("/login/google")
+    def login_start():
+        redirect_uri = url_for("auth_callback", _external=True)
+        return auth.google.authorize_redirect(redirect_uri)
+
+    @app.route("/auth/callback")
+    def auth_callback():
+        email = auth.handle_callback()
+        if email is None:
+            return render_template("login.html", denied=True), 403
+        return redirect(url_for("queue"))
+
+    @app.route("/logout")
+    def logout():
+        auth.logout()
+        return redirect(url_for("login"))
+
+# Runs once at import time so it works both for local `python3 app.py`
+# and for gunicorn importing `app:app` directly on Cloud Run (which never
+# executes the __main__ block below).
+db.ensure_schema(db.get_client())
 
 
 @app.route("/")
@@ -110,12 +163,13 @@ def reject_pending():
 
 @app.route("/sync")
 def sync_page():
-    return render_template("sync.html", status=sync.get_status())
+    return render_template("sync.html", status=sync.get_status(), sync_available=config.SYNC_AVAILABLE)
 
 
 @app.route("/sync/start", methods=["POST"])
 def sync_start():
-    sync.start_sync()
+    if config.SYNC_AVAILABLE:
+        sync.start_sync()
     return redirect(url_for("sync_page"))
 
 
@@ -125,7 +179,6 @@ def sync_status():
 
 
 if __name__ == "__main__":
-    db.ensure_schema(db.get_client())
     # debug=True is safe here -- host="127.0.0.1" means this is never
     # reachable from outside your machine, and it shows the real error
     # (with a traceback) in the browser instead of a generic 500 page.

@@ -61,6 +61,15 @@ Then open **http://127.0.0.1:5050** in a browser.
   each pipeline's own README). Takes several minutes; the page polls for
   live log output.
 
+## Running it as a real hosted site instead of locally
+
+See `deploy/README.md` for deploying to Cloud Run behind Google
+sign-in (restricted to whichever accounts you list) -- a real `https://`
+URL you can open from your phone or any browser, no terminal needed.
+Sync is intentionally disabled on that deployment (see that page for
+why); classify/browse/pending review all work the same either way, since
+both read/write the same BigQuery project.
+
 ## Why a separate small app instead of extending a pipeline
 
 None of the four pipelines are servers -- they're one-shot scripts meant

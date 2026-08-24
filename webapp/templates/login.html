@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Social Analytics</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="login-page">
+    {% if denied %}
+      <h1>Access denied</h1>
+      <p class="subtitle">That Google account isn't on the allowed list for this dashboard.</p>
+    {% else %}
+      <h1>Social Analytics</h1>
+      <p class="subtitle">Sign in with the Google account you use for this project.</p>
+    {% endif %}
+    <a class="login-button" href="{{ url_for('login_start') }}">Sign in with Google</a>
+  </main>
+</body>
+</html>
