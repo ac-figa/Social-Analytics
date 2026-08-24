@@ -18,7 +18,6 @@ app = Flask(__name__)
 @app.route("/")
 def queue():
     client = db.get_client()
-    db.ensure_schema(client)
     unclassified_only = request.args.get("all") != "1"
     collabs_only = request.args.get("collabs") == "1"
     groups = db.list_classification_queue(client, unclassified_only=unclassified_only, collabs_only=collabs_only)
@@ -109,4 +108,8 @@ def sync_status():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5050, debug=False)
+    db.ensure_schema(db.get_client())
+    # debug=True is safe here -- host="127.0.0.1" means this is never
+    # reachable from outside your machine, and it shows the real error
+    # (with a traceback) in the browser instead of a generic 500 page.
+    app.run(host="127.0.0.1", port=5050, debug=True)
