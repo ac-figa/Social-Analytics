@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Social Analytics{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <nav class="topnav">
+    <span class="brand">Social Analytics</span>
+    <a href="{{ url_for('queue') }}">Classify</a>
+    <a href="{{ url_for('pending') }}">Pending Matches</a>
+    <a href="{{ url_for('partnerships') }}">Partnerships</a>
+    <a href="{{ url_for('sync_page') }}">Sync</a>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

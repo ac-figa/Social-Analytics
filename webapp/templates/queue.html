@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Classify{% endblock %}
+{% block content %}
+  <h1>Classification Queue</h1>
+
+  <div class="filters">
+    <a class="filter-toggle {{ 'active' if unclassified_only else '' }}" href="{{ url_for('queue', collabs='1' if collabs_only else None) }}">Unclassified only</a>
+    <a class="filter-toggle {{ 'active' if not unclassified_only else '' }}" href="{{ url_for('queue', all='1', collabs='1' if collabs_only else None) }}">All</a>
+    <span class="sep">|</span>
+    <a class="filter-toggle {{ 'active' if collabs_only else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1') }}">Instagram Collabs only</a>
+    {% if collabs_only %}
+      <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None) }}">Clear collab filter</a>
+    {% endif %}
+  </div>
+
+  {% if not groups %}
+    <p class="empty">Nothing here. Try the "All" filter, or run a Sync first.</p>
+  {% endif %}
+
+  <div class="queue">
+    {% for g in groups %}
+      <form class="queue-row" method="post" action="{{ url_for('classify') }}">
+        <input type="hidden" name="group_id" value="{{ g.Group_ID or '' }}">
+        {% if not g.Group_ID %}
+          <input type="hidden" name="content_id" value="{{ g.Members[0].Platform }}:{{ g.Members[0].Platform_Post_ID }}">
+          <input type="hidden" name="platform" value="{{ g.Members[0].Platform }}">
+          <input type="hidden" name="platform_post_id" value="{{ g.Members[0].Platform_Post_ID }}">
+        {% endif %}
+
+        <div class="members">
+          {% for m in g.Members %}
+            <div class="member">
+              <span class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+              <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption">{{ (m.Caption or '(no caption)')[:90] }}</a>
+              <span class="meta">{{ m.Publish_Date.strftime('%Y-%m-%d') if m.Publish_Date else '' }} &middot; {{ '{:,}'.format(m.Views) if m.Views is not none else '?' }} views</span>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="classify-controls">
+          <input type="text" name="partnership" list="partnerships-datalist" placeholder="Partnership" value="{{ g.Partnership if g.Partnership and g.Partnership != 'Unclassified' else '' }}" class="partnership-input" required>
+          <input type="text" name="content_type" list="content-types-{{ loop.index }}" placeholder="Content Type" value="{{ g.Content_Type if g.Content_Type and g.Content_Type != 'Unclassified' else '' }}" class="content-type-input">
+          <datalist id="content-types-{{ loop.index }}"></datalist>
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    {% endfor %}
+  </div>
+
+  <datalist id="partnerships-datalist">
+    {% for p in partnerships %}<option value="{{ p.Partnership }}">{% endfor %}
+  </datalist>
+
+  <script id="partnerships-data" type="application/json">
+    {{ partnership_content_types|tojson }}
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}

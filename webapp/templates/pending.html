@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Pending Matches{% endblock %}
+{% block content %}
+  <h1>Pending Matches</h1>
+  <p class="subtitle">Auto-suggested cross-platform matches that scored below the auto-confirm threshold. Review each one and accept or reject it.</p>
+
+  {% if not matches %}
+    <p class="empty">Nothing pending review right now.</p>
+  {% endif %}
+
+  <div class="pending-list">
+    {% for m in matches %}
+      <div class="pending-row">
+        <div class="pending-candidate">
+          <span class="platform-badge platform-{{ m.Pending_Platform|lower }}">{{ m.Pending_Platform }}</span>
+          <a href="{{ m.Pending_Permalink }}" target="_blank" rel="noopener">{{ (m.Pending_Caption or '(no caption)')[:90] }}</a>
+          <span class="meta">{{ m.Pending_Publish_Date.strftime('%Y-%m-%d') if m.Pending_Publish_Date else '' }} &middot; confidence {{ '%.2f'|format(m.Match_Confidence) if m.Match_Confidence is not none else '?' }}</span>
+        </div>
+        <div class="pending-vs">suggested match for</div>
+        <div class="pending-existing">
+          {% for e in m.Existing_Members %}
+            <div class="member">
+              <span class="platform-badge platform-{{ e.Platform|lower }}">{{ e.Platform }}</span>
+              <a href="{{ e.Permalink }}" target="_blank" rel="noopener">{{ (e.Caption or '(no caption)')[:90] }}</a>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="pending-actions">
+          <form method="post" action="{{ url_for('confirm_pending') }}">
+            <input type="hidden" name="group_id" value="{{ m.Group_ID }}">
+            <input type="hidden" name="content_id" value="{{ m.Pending_Content_ID }}">
+            <button type="submit" class="accept">Accept</button>
+          </form>
+          <form method="post" action="{{ url_for('reject_pending') }}">
+            <input type="hidden" name="group_id" value="{{ m.Group_ID }}">
+            <input type="hidden" name="content_id" value="{{ m.Pending_Content_ID }}">
+            <button type="submit" class="reject">Reject</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

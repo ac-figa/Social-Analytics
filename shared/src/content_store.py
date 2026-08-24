@@ -71,6 +71,25 @@ CONTENT_GROUP_MEMBERS_SCHEMA = [
     bigquery.SchemaField("Added_At", "TIMESTAMP"),
 ]
 
+# Reference tables for the classification dashboard (webapp/) -- lets it
+# offer dropdowns instead of free text, and keeps the partnership/content
+# type vocabulary consistent across every content_group. content_groups
+# doesn't enforce a foreign key against these (BigQuery has no FK
+# constraints); the dashboard is what keeps the two in sync.
+PARTNERSHIPS_TABLE = "partnerships"
+PARTNERSHIP_CONTENT_TYPES_TABLE = "partnership_content_types"
+
+PARTNERSHIPS_SCHEMA = [
+    bigquery.SchemaField("Partnership", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Created_At", "TIMESTAMP"),
+]
+
+PARTNERSHIP_CONTENT_TYPES_SCHEMA = [
+    bigquery.SchemaField("Partnership", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Content_Type", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Created_At", "TIMESTAMP"),
+]
+
 _CONTENT_ITEMS_UPDATE_COLUMNS = [f.name for f in CONTENT_ITEMS_SCHEMA if f.name != "Content_ID"]
 
 
@@ -98,6 +117,8 @@ def ensure_schema(client: bigquery.Client) -> None:
         (CONTENT_ITEMS_TABLE, CONTENT_ITEMS_SCHEMA),
         (CONTENT_GROUPS_TABLE, CONTENT_GROUPS_SCHEMA),
         (CONTENT_GROUP_MEMBERS_TABLE, CONTENT_GROUP_MEMBERS_SCHEMA),
+        (PARTNERSHIPS_TABLE, PARTNERSHIPS_SCHEMA),
+        (PARTNERSHIP_CONTENT_TYPES_TABLE, PARTNERSHIP_CONTENT_TYPES_SCHEMA),
     ):
         table_id = _table_ref(name)
         try:
@@ -300,6 +321,159 @@ def set_classification(
             ]
         ),
     ).result()
+
+
+def list_partnerships(client: bigquery.Client) -> list:
+    """Returns [{"Partnership": ..., "Content_Types": [...]}] for the
+    dashboard's dropdowns, one row per partnership with its content types
+    nested."""
+    query = f"""
+    SELECT p.Partnership, ARRAY_AGG(ct.Content_Type IGNORE NULLS ORDER BY ct.Content_Type) AS Content_Types
+    FROM `{_table_ref(PARTNERSHIPS_TABLE)}` p
+    LEFT JOIN `{_table_ref(PARTNERSHIP_CONTENT_TYPES_TABLE)}` ct ON p.Partnership = ct.Partnership
+    GROUP BY p.Partnership
+    ORDER BY p.Partnership
+    """
+    return [{"Partnership": r["Partnership"], "Content_Types": list(r["Content_Types"])} for r in client.query(query).result()]
+
+
+def add_partnership(client: bigquery.Client, partnership: str) -> None:
+    query = f"""
+    INSERT INTO `{_table_ref(PARTNERSHIPS_TABLE)}` (Partnership, Created_At)
+    SELECT @partnership, CURRENT_TIMESTAMP()
+    WHERE NOT EXISTS (
+      SELECT 1 FROM `{_table_ref(PARTNERSHIPS_TABLE)}` WHERE Partnership = @partnership
+    )
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("partnership", "STRING", partnership)]
+        ),
+    ).result()
+
+
+def add_content_type(client: bigquery.Client, partnership: str, content_type: str) -> None:
+    """Also ensures the parent partnership exists, so the dashboard can
+    add a content type for a brand-new partnership in one action."""
+    add_partnership(client, partnership)
+    query = f"""
+    INSERT INTO `{_table_ref(PARTNERSHIP_CONTENT_TYPES_TABLE)}` (Partnership, Content_Type, Created_At)
+    SELECT @partnership, @content_type, CURRENT_TIMESTAMP()
+    WHERE NOT EXISTS (
+      SELECT 1 FROM `{_table_ref(PARTNERSHIP_CONTENT_TYPES_TABLE)}`
+      WHERE Partnership = @partnership AND Content_Type = @content_type
+    )
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("partnership", "STRING", partnership),
+                bigquery.ScalarQueryParameter("content_type", "STRING", content_type),
+            ]
+        ),
+    ).result()
+
+
+def list_classification_queue(
+    client: bigquery.Client, unclassified_only: bool = True, limit: int = 100
+) -> list:
+    """Returns one row per content_group, each with its member items
+    nested -- the QuickBooks-style classification queue's main list.
+    Ungrouped content_items (no group at all -- e.g. platform-exclusive
+    content that never matched anything) are included too, as a
+    single-item pseudo-group with Group_ID=None; the dashboard creates a
+    real one-member group on first classification (see
+    webapp/src/db.py classify()) rather than leaving single-platform
+    content permanently unclassifiable."""
+    query = f"""
+    WITH grouped AS (
+      SELECT
+        g.Group_ID, g.Partnership, g.Content_Type,
+        ARRAY_AGG(
+          STRUCT(ci.Platform AS Platform, ci.Caption AS Caption, ci.Publish_Date AS Publish_Date,
+                 ci.Permalink AS Permalink, ci.Views AS Views, ci.Platform_Post_ID AS Platform_Post_ID)
+          ORDER BY ci.Platform
+        ) AS Members,
+        MAX(ci.Publish_Date) AS Latest_Date
+      FROM `{_table_ref(CONTENT_GROUPS_TABLE)}` g
+      JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m ON g.Group_ID = m.Group_ID AND m.Confirmed = TRUE
+      JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
+      GROUP BY g.Group_ID, g.Partnership, g.Content_Type
+    ),
+    ungrouped AS (
+      SELECT
+        CAST(NULL AS STRING) AS Group_ID, CAST(NULL AS STRING) AS Partnership, CAST(NULL AS STRING) AS Content_Type,
+        [STRUCT(ci.Platform AS Platform, ci.Caption AS Caption, ci.Publish_Date AS Publish_Date,
+                ci.Permalink AS Permalink, ci.Views AS Views, ci.Platform_Post_ID AS Platform_Post_ID)] AS Members,
+        ci.Publish_Date AS Latest_Date
+      FROM `{_table_ref(CONTENT_ITEMS_TABLE)}` ci
+      LEFT JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m ON ci.Content_ID = m.Content_ID
+      WHERE m.Content_ID IS NULL AND ci.API_Status = 'Active'
+    )
+    SELECT * FROM grouped
+    UNION ALL
+    SELECT * FROM ungrouped
+    """
+    rows = list(client.query(query).result())
+    results = []
+    for r in rows:
+        partnership = r["Partnership"]
+        if unclassified_only and partnership not in (None, "Unclassified"):
+            continue
+        results.append(
+            {
+                "Group_ID": r["Group_ID"],
+                "Partnership": partnership,
+                "Content_Type": r["Content_Type"],
+                "Members": [dict(m) for m in r["Members"]],
+                "Latest_Date": r["Latest_Date"],
+            }
+        )
+    results.sort(key=lambda g: g["Latest_Date"] or "", reverse=True)
+    return results[:limit]
+
+
+def list_pending_matches(client: bigquery.Client) -> list:
+    """Every unconfirmed (Confirmed=False) group membership, with the full
+    group's members for context -- what the dashboard's review queue
+    shows so a human can accept or reject each auto-suggested match."""
+    query = f"""
+    SELECT
+      pending.Group_ID, pending.Content_ID AS Pending_Content_ID,
+      pending.Match_Confidence,
+      ci.Platform AS Pending_Platform, ci.Caption AS Pending_Caption,
+      ci.Publish_Date AS Pending_Publish_Date, ci.Permalink AS Pending_Permalink,
+      ARRAY_AGG(
+        STRUCT(other_ci.Platform AS Platform, other_ci.Caption AS Caption,
+               other_ci.Publish_Date AS Publish_Date, other_ci.Permalink AS Permalink)
+        ORDER BY other_ci.Platform
+      ) AS Existing_Members
+    FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` pending
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON pending.Content_ID = ci.Content_ID
+    JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` other ON pending.Group_ID = other.Group_ID
+      AND other.Content_ID != pending.Content_ID
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` other_ci ON other.Content_ID = other_ci.Content_ID
+    WHERE pending.Confirmed = FALSE
+    GROUP BY pending.Group_ID, pending.Content_ID, pending.Match_Confidence,
+      ci.Platform, ci.Caption, ci.Publish_Date, ci.Permalink
+    ORDER BY pending.Match_Confidence DESC
+    """
+    rows = list(client.query(query).result())
+    return [
+        {
+            "Group_ID": r["Group_ID"],
+            "Pending_Content_ID": r["Pending_Content_ID"],
+            "Match_Confidence": r["Match_Confidence"],
+            "Pending_Platform": r["Pending_Platform"],
+            "Pending_Caption": r["Pending_Caption"],
+            "Pending_Publish_Date": r["Pending_Publish_Date"],
+            "Pending_Permalink": r["Pending_Permalink"],
+            "Existing_Members": [dict(m) for m in r["Existing_Members"]],
+        }
+        for r in rows
+    ]
 
 
 def get_partner_report(client: bigquery.Client, partnership: str) -> list:

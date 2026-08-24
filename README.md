@@ -14,7 +14,7 @@ facebookpipeline/              Facebook Page videos/Reels -> BigQuery (live, reu
 youtubepipeline/                YouTube Shorts/videos -> BigQuery (live)
 tiktokpipeline/                  TikTok videos -> BigQuery (live, running on Sandbox credentials while the Production app review is pending)
 shared/                          Cross-platform matching + partnership reporting layer all pipelines feed into
-webapp/                          Classification dashboard + shareable partner report pages (planned)
+webapp/                          Local classification dashboard (live) -- shareable partner report pages still planned
 ```
 
 Each platform pipeline ingests its own detailed data into its own
