@@ -58,6 +58,21 @@ class TestPairScore(unittest.TestCase):
         )
         self.assertGreaterEqual(pair_score(a, b), MIN_SUGGEST_SCORE)
 
+    def test_recurring_caption_far_apart_dates_never_matches(self):
+        """Real production bug (Aug 2026): a recurring caption template
+        ("It's always the same story", reused across many unrelated
+        videos over a year) scored 0.75 on caption alone -- clearing
+        MIN_SUGGEST_SCORE -- for a Jul 2026 post against a completely
+        unrelated Aug 2025 TikTok video 355 days earlier, with no date or
+        duration signal reining it in. Date proximity must be a hard gate,
+        not just a weighted factor, for exactly this reason."""
+        a = item("ig:1", "Instagram", "It's always the same story \U0001f602\U0001f602", 24)
+        far = item(
+            "tt:1", "TikTok", "It's always the same story \U0001f602 #funny #dads #fyp", 24
+        )
+        far["Publish_Date"] = datetime(2025, 8, 3, 19, 57, 20)
+        self.assertEqual(pair_score(a, far), 0.0)
+
     def test_matching_duration_overrides_weak_caption(self):
         """When both sides expose a duration (YouTube/TikTok/Facebook all
         do), it becomes the primary signal -- a near-identical duration on

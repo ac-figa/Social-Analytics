@@ -107,8 +107,21 @@ def pair_score(item_a: dict, item_b: dict) -> float:
     if item_a.get("Platform") == item_b.get("Platform"):
         return 0.0
 
-    cap_score = _caption_similarity(item_a.get("Caption"), item_b.get("Caption"))
     date_score = _date_proximity(item_a.get("Publish_Date"), item_b.get("Publish_Date"))
+    if date_score <= 0.0:
+        # Hard gate, not just a weighted factor: real cross-posts of the
+        # same video always happen within days of each other on this
+        # project's accounts, never months/years apart. Without this,
+        # a recurring caption template (e.g. a creator's go-to joke,
+        # reused across many unrelated videos over a year) can score high
+        # on caption alone regardless of how implausible the time gap is.
+        # Confirmed live (Aug 2026): "It's always the same story" matched
+        # a real Jul 2026 post to an unrelated Aug 2025 TikTok video this
+        # way -- caption-only scored 0.75, clearing MIN_SUGGEST_SCORE,
+        # before this gate existed.
+        return 0.0
+
+    cap_score = _caption_similarity(item_a.get("Caption"), item_b.get("Caption"))
     dur_score = _duration_proximity(item_a.get("Duration"), item_b.get("Duration"))
 
     if dur_score is not None:
@@ -122,10 +135,10 @@ def pair_score(item_a: dict, item_b: dict) -> float:
         return 0.5 * dur_score + 0.3 * date_score + 0.2 * cap_score
 
     # At least one side has no duration at all (always true for Instagram)
-    # -- fall back to the caption-led scheme. Caption match carries almost
-    # all the signal here; date proximity alone is never enough on its own
-    # -- lots of unrelated posts land on the same day -- so it only nudges
-    # an already-plausible caption match.
+    # -- fall back to the caption-led scheme. Caption carries most of the
+    # remaining signal; date still contributes (it's already been gated
+    # above to be within MAX_DATE_DELTA_DAYS, so this is refining "how
+    # close within the window," not vouching for the match on its own).
     return 0.75 * cap_score + 0.25 * date_score
 
 
