@@ -149,6 +149,18 @@ def pair_score(item_a: dict, item_b: dict) -> float:
     return 0.75 * cap_score + 0.25 * date_score
 
 
+def best_pairwise_score(item: dict, candidates: list[dict]) -> float:
+    """Highest pair_score between item and any of candidates (e.g. the
+    other members of one content_group). 0.0 if candidates is empty.
+    Shared by run_matching.py (scoring an ungrouped item against an
+    existing group) and the reconfirm_pending.py / reaudit_confirmed_matches.py
+    reconciliation scripts (re-scoring a stored match against current
+    data and the current formula, rather than trusting a stale stored
+    Match_Confidence -- see reaudit_confirmed_matches.py's docstring for
+    why that distinction matters)."""
+    return max((pair_score(item, c) for c in candidates), default=0.0)
+
+
 def find_candidate_groups(items: list[dict]) -> list[dict]:
     """Greedy clustering of ungrouped content_items into candidate groups.
 

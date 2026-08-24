@@ -201,6 +201,47 @@ def get_confirmed_group_members(client: bigquery.Client) -> list:
     return [dict(r) for r in client.query(query).result()]
 
 
+def get_all_group_members(client: bigquery.Client) -> list:
+    """Every content_group_members row (any Confirmed/Match_Method status),
+    with the fields matching.pair_score needs -- the full dataset
+    reconfirm_pending.py and reaudit_confirmed_matches.py group by
+    Group_ID in Python to re-score each auto-matched membership against
+    its group's *other* members using current live data and the current
+    matching.py formula, rather than trusting a stored Match_Confidence
+    that may have been computed under an older version of either."""
+    query = f"""
+    SELECT m.Group_ID, m.Content_ID, m.Confirmed, m.Match_Method,
+      ci.Platform, ci.Caption, ci.Publish_Date, ci.Duration
+    FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
+    """
+    return [dict(r) for r in client.query(query).result()]
+
+
+def set_membership_status(
+    client: bigquery.Client, group_id: str, content_id: str, confirmed: bool, match_confidence: float
+) -> None:
+    """Updates an existing membership's Confirmed flag and
+    Match_Confidence in place -- used by the reconciliation scripts to
+    record a freshly-recomputed score, promoting/demoting as needed."""
+    query = f"""
+    UPDATE `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}`
+    SET Confirmed = @confirmed, Match_Confidence = @match_confidence
+    WHERE Group_ID = @group_id AND Content_ID = @content_id
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("group_id", "STRING", group_id),
+                bigquery.ScalarQueryParameter("content_id", "STRING", content_id),
+                bigquery.ScalarQueryParameter("confirmed", "BOOL", confirmed),
+                bigquery.ScalarQueryParameter("match_confidence", "FLOAT64", match_confidence),
+            ]
+        ),
+    ).result()
+
+
 def create_group(
     client: bigquery.Client,
     content_ids: list,

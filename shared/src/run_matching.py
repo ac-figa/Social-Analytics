@@ -48,10 +48,9 @@ def _match_into_existing_groups(client, ungrouped: list) -> tuple[list, int, int
         for group_id, members in groups.items():
             if any(m["Platform"] == item["Platform"] for m in members):
                 continue  # would put two items from the same platform in one group
-            for member in members:
-                score = matching.pair_score(item, member)
-                if score > best_score:
-                    best_score, best_group_id = score, group_id
+            score = matching.best_pairwise_score(item, members)
+            if score > best_score:
+                best_score, best_group_id = score, group_id
 
         if best_group_id is not None and best_score >= matching.MIN_SUGGEST_SCORE:
             confirmed = best_score >= matching.AUTO_CONFIRM_SCORE
