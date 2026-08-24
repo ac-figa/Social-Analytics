@@ -427,23 +427,35 @@ def add_members(
     match_confidence: float,
     confirmed: bool,
 ) -> None:
+    """Uses a DML INSERT rather than the streaming insert_rows_json API --
+    streamed rows sit in BigQuery's streaming buffer for up to ~90 minutes,
+    during which any UPDATE/DELETE against them is rejected (confirmed live,
+    Aug 2026: accepting a pending match minutes after it was created failed
+    with "would affect rows in the streaming buffer"). DML-inserted rows
+    have no such delay, so confirm_membership/remove_member/set_membership_status
+    work on a just-created membership immediately."""
     if not content_ids:
         return
     now = datetime.now(timezone.utc).isoformat()
-    rows = [
-        {
-            "Group_ID": group_id,
-            "Content_ID": cid,
-            "Match_Method": match_method,
-            "Match_Confidence": match_confidence,
-            "Confirmed": confirmed,
-            "Added_At": now,
-        }
-        for cid in content_ids
-    ]
-    errors = client.insert_rows_json(_table_ref(CONTENT_GROUP_MEMBERS_TABLE), rows)
-    if errors:
-        raise RuntimeError(f"Failed to add group members: {errors}")
+    query = f"""
+    INSERT INTO `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}`
+      (Group_ID, Content_ID, Match_Method, Match_Confidence, Confirmed, Added_At)
+    SELECT @group_id, content_id, @match_method, @match_confidence, @confirmed, @now
+    FROM UNNEST(@content_ids) AS content_id
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("group_id", "STRING", group_id),
+                bigquery.ArrayQueryParameter("content_ids", "STRING", content_ids),
+                bigquery.ScalarQueryParameter("match_method", "STRING", match_method),
+                bigquery.ScalarQueryParameter("match_confidence", "FLOAT64", match_confidence),
+                bigquery.ScalarQueryParameter("confirmed", "BOOL", confirmed),
+                bigquery.ScalarQueryParameter("now", "TIMESTAMP", now),
+            ]
+        ),
+    ).result()
 
 
 def remove_member(client: bigquery.Client, group_id: str, content_id: str) -> None:
