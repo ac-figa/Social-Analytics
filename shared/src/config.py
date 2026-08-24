@@ -47,10 +47,22 @@ TT_BQ_DATASET = os.environ.get("TT_BQ_DATASET", "tiktok_analytics")
 # classifications-table half of this; kept separate since the dashboard
 # needs its own env vars loaded from webapp/.env, not shared/.env.
 PLATFORM_CONFIG = {
-    "Instagram": {"dataset": IG_BQ_DATASET, "master_table": "instagram_master", "id_column": "Post_ID"},
-    "Facebook": {"dataset": FB_BQ_DATASET, "master_table": "facebook_master", "id_column": "Video_ID"},
-    "YouTube": {"dataset": YT_BQ_DATASET, "master_table": "youtube_master", "id_column": "Video_ID"},
-    "TikTok": {"dataset": TT_BQ_DATASET, "master_table": "tiktok_master", "id_column": "Video_ID"},
+    "Instagram": {
+        "dataset": IG_BQ_DATASET, "master_table": "instagram_master",
+        "classifications_table": "instagram_classifications", "id_column": "Post_ID",
+    },
+    "Facebook": {
+        "dataset": FB_BQ_DATASET, "master_table": "facebook_master",
+        "classifications_table": "facebook_classifications", "id_column": "Video_ID",
+    },
+    "YouTube": {
+        "dataset": YT_BQ_DATASET, "master_table": "youtube_master",
+        "classifications_table": "youtube_classifications", "id_column": "Video_ID",
+    },
+    "TikTok": {
+        "dataset": TT_BQ_DATASET, "master_table": "tiktok_master",
+        "classifications_table": "tiktok_classifications", "id_column": "Video_ID",
+    },
 }
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")

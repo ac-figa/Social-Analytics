@@ -201,6 +201,94 @@ def get_confirmed_group_members(client: bigquery.Client) -> list:
     return [dict(r) for r in client.query(query).result()]
 
 
+def truncate_groups(client: bigquery.Client) -> None:
+    """Wipes ALL grouping/matching state (content_group_members and
+    content_groups) for a full rebuild -- see rebuild_groups.py. Never
+    touches content_items (the raw synced data) or any platform's own
+    *_classifications table, which is exactly what makes the rebuild safe:
+    every classification you've made survives independently there."""
+    client.query(f"TRUNCATE TABLE `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}`").result()
+    client.query(f"TRUNCATE TABLE `{_table_ref(CONTENT_GROUPS_TABLE)}`").result()
+
+
+def reapply_classifications(client: bigquery.Client, content_id_classifications: dict) -> int:
+    """content_id_classifications: {Content_ID: (Partnership, Content_Type)}.
+    After a rebuild, every new content_group starts Unclassified even
+    though the underlying content was already classified -- that data
+    lives durably per-platform, untouched by truncate_groups(). This
+    looks up each new group's members against the preserved mapping and
+    sets the group's Partnership/Content_Type to match wherever found.
+    Returns how many groups got reclassified this way."""
+    if not content_id_classifications:
+        return 0
+
+    all_members = get_all_group_members(client)
+    groups: dict[str, list] = {}
+    for m in all_members:
+        groups.setdefault(m["Group_ID"], []).append(m)
+
+    updates = []
+    for group_id, members in groups.items():
+        for m in members:
+            found = content_id_classifications.get(m["Content_ID"])
+            if found:
+                updates.append({"Group_ID": group_id, "Partnership": found[0], "Content_Type": found[1]})
+                break
+
+    if not updates:
+        return 0
+
+    staging_id = _table_ref("content_groups_reclassify_staging")
+    staging_schema = [
+        bigquery.SchemaField("Group_ID", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("Partnership", "STRING"),
+        bigquery.SchemaField("Content_Type", "STRING"),
+    ]
+    client.create_table(bigquery.Table(staging_id, schema=staging_schema), exists_ok=True)
+    job_config = bigquery.LoadJobConfig(
+        schema=staging_schema,
+        write_disposition="WRITE_TRUNCATE",
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+    )
+    client.load_table_from_json(updates, staging_id, job_config=job_config).result()
+
+    merge_sql = f"""
+    MERGE `{_table_ref(CONTENT_GROUPS_TABLE)}` T
+    USING `{staging_id}` S
+    ON T.Group_ID = S.Group_ID
+    WHEN MATCHED THEN UPDATE SET T.Partnership = S.Partnership, T.Content_Type = S.Content_Type,
+      T.Updated_At = CURRENT_TIMESTAMP(), T.Updated_By = 'rebuild_groups'
+    """
+    client.query(merge_sql).result()
+    return len(updates)
+
+
+def merge_groups(client: bigquery.Client, keep_group_id: str, absorb_group_id: str) -> None:
+    """Moves every member of absorb_group_id into keep_group_id and
+    deletes the now-empty absorb_group_id row. Caller decides whether
+    merging is appropriate (platform overlap, classification conflicts,
+    score threshold) -- this just performs it."""
+    client.query(
+        f"""
+        UPDATE `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}`
+        SET Group_ID = @keep_group_id
+        WHERE Group_ID = @absorb_group_id
+        """,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("keep_group_id", "STRING", keep_group_id),
+                bigquery.ScalarQueryParameter("absorb_group_id", "STRING", absorb_group_id),
+            ]
+        ),
+    ).result()
+    client.query(
+        f"DELETE FROM `{_table_ref(CONTENT_GROUPS_TABLE)}` WHERE Group_ID = @absorb_group_id",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("absorb_group_id", "STRING", absorb_group_id)]
+        ),
+    ).result()
+
+
 def get_all_group_members(client: bigquery.Client) -> list:
     """Every content_group_members row (any Confirmed/Match_Method status),
     with the fields matching.pair_score needs -- the full dataset
