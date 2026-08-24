@@ -107,6 +107,18 @@ def ensure_schema(client: bigquery.Client) -> None:
             client.create_table(bigquery.Table(table_id, schema=schema))
 
 
+def _content_items_update_expr(col: str) -> str:
+    """Instagram's to_content_item() always produces Duration=NULL every
+    run -- the Graph API never returns one (see
+    instagramanalyticspipeline/docs/API_NOTES.md). Without this
+    carve-out, every normal Instagram pipeline run would stomp the value
+    shared/src/backfill_instagram_duration.py wrote in right back to
+    NULL. Every other platform's real Duration still updates normally."""
+    if col == "Duration":
+        return "T.Duration = CASE WHEN S.Platform = 'Instagram' THEN T.Duration ELSE S.Duration END"
+    return f"T.{col} = S.{col}"
+
+
 def upsert_content_items(client: bigquery.Client, rows: list) -> None:
     """rows: list of dicts matching CONTENT_ITEMS_SCHEMA. Called by every
     platform pipeline after it builds its own platform-specific rows."""
@@ -123,7 +135,7 @@ def upsert_content_items(client: bigquery.Client, rows: list) -> None:
     )
     client.load_table_from_json(rows, staging_id, job_config=job_config).result()
 
-    update_clause = ", ".join(f"T.{c} = S.{c}" for c in _CONTENT_ITEMS_UPDATE_COLUMNS)
+    update_clause = ", ".join(_content_items_update_expr(c) for c in _CONTENT_ITEMS_UPDATE_COLUMNS)
     insert_columns = [f.name for f in CONTENT_ITEMS_SCHEMA]
     insert_values = ", ".join(f"S.{c}" for c in insert_columns)
 
