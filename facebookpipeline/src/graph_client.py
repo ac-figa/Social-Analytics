@@ -33,6 +33,19 @@ instagramanalyticspipeline/docs/API_NOTES.md) -- so `Impressions` stays
 `None`, genuinely unavailable rather than unfetched. `Shares` was also
 re-checked directly on the post object and simply isn't returned at all.
 
+Some entries in `/{page-id}/videos` are not real published Page posts at
+all -- confirmed live (Aug 2026) via the dashboard's Browse tab, where a
+chunk of videos showed up with no caption at all. Checked directly: these
+have no `description`, no `likes` object (not even `{total_count: 0}` --
+the key is absent entirely, unlike `comments` which is always present),
+and don't appear in the Page's own `/posts` feed under their `post_id` at
+all. Not Reels either (checked `/video_reels` directly -- it only
+returned the properly-published ones). Best guess: leftover/duplicate
+upload artifacts, not content ever actually published to the Page.
+`pipeline.py` filters these out using the missing `likes` object as the
+signal (the one field a real post always has, even at zero) rather than
+missing `description` (a real post could legitimately have no caption).
+
 See docs/SETUP.md for the full writeup.
 """
 import json

@@ -86,6 +86,7 @@ def run(full_refresh: bool = False) -> int:
 
     rows = []
     failed_video_ids = []
+    orphan_video_ids = []
 
     for video_id in refresh_ids:
         try:
@@ -93,6 +94,19 @@ def run(full_refresh: bool = False) -> int:
             if detail is None:
                 log.warning("Skipping Video_ID=%s: no video detail available.", video_id)
                 failed_video_ids.append(video_id)
+                continue
+
+            if detail.get("likes") is None:
+                # Confirmed live (Aug 2026): a real, published Page post
+                # always returns a `likes` object (even {total_count: 0}
+                # for zero likes) -- these video assets never do, have no
+                # `description`, and don't correspond to any entry in the
+                # Page's own /posts feed at all. Not Reels either (checked
+                # /video_reels directly). Best guess: leftover/duplicate
+                # upload artifacts, not real published content -- treated
+                # as noise rather than pulled into Facebook_Master.
+                log.info("Skipping Video_ID=%s: not a real Page post (no likes object).", video_id)
+                orphan_video_ids.append(video_id)
                 continue
 
             row = transform.build_master_row(
@@ -118,7 +132,12 @@ def run(full_refresh: bool = False) -> int:
     bigquery_store.upsert_master_rows(bq_client, rows)
     # Uses every video still listed by the API (all_video_ids), not just the
     # ones refreshed this run -- see the Instagram pipeline's twin comment.
-    bigquery_store.mark_missing_as_deleted(bq_client, all_video_ids)
+    # Orphan video assets (see the `likes is None` check above) are removed
+    # from this list so mark_missing_as_deleted correctly soft-deletes any
+    # that were previously synced before this filter existed, instead of
+    # leaving them stuck as Active forever.
+    active_ids = [vid for vid in all_video_ids if vid not in orphan_video_ids]
+    bigquery_store.mark_missing_as_deleted(bq_client, active_ids)
     _sync_to_shared_content_layer(rows)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()
@@ -126,9 +145,11 @@ def run(full_refresh: bool = False) -> int:
     bigquery_store.insert_history_snapshot(bq_client, history_rows, snapshot_date)
 
     log.info(
-        "Run complete: %d upserted, %d failed, %d skipped (outside refresh window). Snapshot date: %s.",
+        "Run complete: %d upserted, %d failed, %d orphan video asset(s) skipped, "
+        "%d skipped (outside refresh window). Snapshot date: %s.",
         len(rows),
         len(failed_video_ids),
+        len(orphan_video_ids),
         skipped_count,
         snapshot_date,
     )
