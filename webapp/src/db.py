@@ -98,48 +98,6 @@ def classify(client: bigquery.Client, group_id: str, content_id: str, platform: 
     return group_id
 
 
-def _propagate_bulk_to_platform(client: bigquery.Client, platform: str, items: list) -> None:
-    """items: [{"post_id":..., "partnership":..., "content_type":...}].
-    Bulk equivalent of _propagate_to_platform() -- one staging-table load
-    plus one MERGE per platform, instead of one MERGE per classified item,
-    for the webapp's "Apply All" button."""
-    if not items:
-        return
-    p = config.PLATFORM_CONFIG[platform]
-    table_ref = _classifications_table_ref(platform)
-    id_column = p["id_column"]
-    staging_id = f"{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.{platform.lower()}_classify_bulk_staging"
-    staging_schema = [
-        bigquery.SchemaField(id_column, "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("Partnership", "STRING"),
-        bigquery.SchemaField("Content_Type", "STRING"),
-    ]
-    client.create_table(bigquery.Table(staging_id, schema=staging_schema), exists_ok=True)
-    client.load_table_from_json(
-        [{id_column: it["post_id"], "Partnership": it["partnership"], "Content_Type": it["content_type"]} for it in items],
-        staging_id,
-        job_config=bigquery.LoadJobConfig(
-            schema=staging_schema, write_disposition="WRITE_TRUNCATE",
-            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        ),
-    ).result()
-    client.query(
-        f"""
-        MERGE `{table_ref}` T
-        USING `{staging_id}` S
-        ON T.{id_column} = S.{id_column}
-        WHEN MATCHED THEN UPDATE SET
-          Partnership = S.Partnership, Content_Type = S.Content_Type,
-          Updated_At = CURRENT_TIMESTAMP(), Updated_By = @updated_by
-        WHEN NOT MATCHED THEN INSERT ({id_column}, Partnership, Content_Type, Updated_At, Updated_By)
-          VALUES (S.{id_column}, S.Partnership, S.Content_Type, CURRENT_TIMESTAMP(), @updated_by)
-        """,
-        job_config=bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("updated_by", "STRING", UPDATED_BY)]
-        ),
-    ).result()
-
-
 def classify_bulk(client: bigquery.Client, rows: list) -> int:
     """rows: [{"group_id", "content_id", "platform", "platform_post_id",
     "partnership", "content_type"}] -- the webapp's "Apply All" button.
@@ -179,7 +137,7 @@ def classify_bulk(client: bigquery.Client, rows: list) -> int:
                 {"post_id": post_id, "partnership": r["partnership"], "content_type": r["content_type"]}
             )
     for plat, items in by_platform.items():
-        _propagate_bulk_to_platform(client, plat, items)
+        content_store.propagate_bulk_classifications(client, plat, items, updated_by=UPDATED_BY)
 
     return len(rows)
 

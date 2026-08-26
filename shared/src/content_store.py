@@ -595,6 +595,53 @@ def bulk_member_platform_ids(client: bigquery.Client, group_ids: list) -> dict:
     return result
 
 
+def propagate_bulk_classifications(client: bigquery.Client, platform: str, items: list, updated_by: str) -> None:
+    """items: [{"post_id":..., "partnership":..., "content_type":...}].
+    Writes a batch of classifications into one platform's own
+    *_classifications table (instagram_master's reporting surface, not
+    just content_groups) via a staging-table load plus one MERGE, instead
+    of one MERGE per item. Shared by the webapp's "Apply All" button and
+    any bulk-classification backfill script (e.g. importing a legacy
+    spreadsheet's classifications) -- both need the exact same
+    group-classified-content-propagates-to-every-member's-own-platform-table
+    behavior that content_store.set_classification() alone doesn't cover."""
+    if not items:
+        return
+    p = config.PLATFORM_CONFIG[platform]
+    table_ref = f"{config.BQ_PROJECT_ID}.{p['dataset']}.{p['classifications_table']}"
+    id_column = p["id_column"]
+    staging_id = _table_ref(f"{platform.lower()}_classify_bulk_staging")
+    staging_schema = [
+        bigquery.SchemaField(id_column, "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("Partnership", "STRING"),
+        bigquery.SchemaField("Content_Type", "STRING"),
+    ]
+    client.create_table(bigquery.Table(staging_id, schema=staging_schema), exists_ok=True)
+    client.load_table_from_json(
+        [{id_column: it["post_id"], "Partnership": it["partnership"], "Content_Type": it["content_type"]} for it in items],
+        staging_id,
+        job_config=bigquery.LoadJobConfig(
+            schema=staging_schema, write_disposition="WRITE_TRUNCATE",
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        ),
+    ).result()
+    client.query(
+        f"""
+        MERGE `{table_ref}` T
+        USING `{staging_id}` S
+        ON T.{id_column} = S.{id_column}
+        WHEN MATCHED THEN UPDATE SET
+          Partnership = S.Partnership, Content_Type = S.Content_Type,
+          Updated_At = CURRENT_TIMESTAMP(), Updated_By = @updated_by
+        WHEN NOT MATCHED THEN INSERT ({id_column}, Partnership, Content_Type, Updated_At, Updated_By)
+          VALUES (S.{id_column}, S.Partnership, S.Content_Type, CURRENT_TIMESTAMP(), @updated_by)
+        """,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by)]
+        ),
+    ).result()
+
+
 def get_platform_and_group_for_content_ids(client: bigquery.Client, content_ids: list) -> dict:
     """{Content_ID: {"Platform":..., "Group_ID": str or None}} for a list
     of raw content_ids -- used by the webapp's manual "Group Selected"
