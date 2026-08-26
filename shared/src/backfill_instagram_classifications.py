@@ -1,9 +1,20 @@
 """
 One-time import: applies the manual classifications already sitting in a
-pre-existing spreadsheet-derived table (project-6f3dedab-dbda-4261-90d
-.master_data.instagram -- every Instagram video the user had already
-classified by Partnership/Content_Type before this system existed) to the
-matching content in this system.
+pre-existing spreadsheet-derived table (originally
+project-6f3dedab-dbda-4261-90d.master_data.instagram -- every Instagram
+video the user had already classified by Partnership/Content_Type before
+this system existed) to the matching content in this system.
+
+Reads from master_data.instagram_native rather than the original
+Sheets-linked master_data.instagram directly: a BigQuery table backed by
+a Google Sheet requires Drive-scoped credentials to query, and the gcloud
+CLI's OAuth client is blocked by Google from ever requesting that scope
+("This app is blocked" -- a sensitive-scope restriction gcloud itself
+can't clear, not a bug in this script). instagram_native is a one-time
+`CREATE TABLE ... AS SELECT * FROM master_data.instagram` snapshot taken
+via the BigQuery web console (which already has full Drive access
+through the normal browser sign-in), so this script and everything else
+here only ever needs plain BigQuery scope.
 
 Matches on Post_ID (-> Content_ID "instagram:{Post_ID}"). Any Post_ID not
 found in our own Instagram data (never synced, or since deleted) is
@@ -28,7 +39,7 @@ from . import content_store
 
 log = logging.getLogger(__name__)
 
-LEGACY_TABLE = "project-6f3dedab-dbda-4261-90d.master_data.instagram"
+LEGACY_TABLE = "project-6f3dedab-dbda-4261-90d.master_data.instagram_native"
 UPDATED_BY = "legacy_instagram_backfill"
 
 
