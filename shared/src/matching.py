@@ -39,6 +39,20 @@ MAX_DATE_DELTA_DAYS = 5
 # this, duration proximity contributes nothing to the score.
 MAX_DURATION_DELTA_SECONDS = 3.0
 
+# When duration AND date are both this tight, that combination alone is
+# treated as certain enough to auto-confirm without needing caption text
+# to agree at all -- two different videos landing within a couple seconds
+# of duration and a couple days of each other, by coincidence, is
+# vanishingly rare on this project's real posting patterns. Requested
+# directly (Aug 2026) after reviewing how many pending matches were
+# sitting at strong duration/date agreement but a merely-so-so caption
+# score keeping them under AUTO_CONFIRM_SCORE. Tighter than
+# MAX_DATE_DELTA_DAYS/MAX_DURATION_DELTA_SECONDS (which just gate/scale
+# the weighted formula below) -- this is a separate, stricter bar for
+# skipping that formula entirely.
+STRONG_MATCH_MAX_DATE_DELTA_DAYS = 2
+STRONG_MATCH_MAX_DURATION_DELTA_SECONDS = 2.0
+
 _MENTION_HASHTAG_RE = re.compile(r"[@#]\w+")
 _PUNCTUATION_RE = re.compile(r"[^\w\s]")
 
@@ -103,6 +117,22 @@ def _duration_proximity(a, b):
     return 1.0 - (delta / MAX_DURATION_DELTA_SECONDS)
 
 
+def _is_strong_signal_match(item_a: dict, item_b: dict) -> bool:
+    """True when duration and date alone are close enough (see
+    STRONG_MATCH_MAX_DATE_DELTA_DAYS/STRONG_MATCH_MAX_DURATION_DELTA_SECONDS)
+    to treat this as certainly the same video, independent of caption.
+    Only meaningful when both sides actually have a Duration -- Instagram
+    never does, so an Instagram pair always falls through to the normal
+    caption-led scoring instead."""
+    date_a, date_b = item_a.get("Publish_Date"), item_b.get("Publish_Date")
+    dur_a, dur_b = item_a.get("Duration"), item_b.get("Duration")
+    if date_a is None or date_b is None or dur_a is None or dur_b is None:
+        return False
+    date_delta_days = abs((date_a - date_b).total_seconds()) / 86400
+    duration_delta = abs(dur_a - dur_b)
+    return date_delta_days <= STRONG_MATCH_MAX_DATE_DELTA_DAYS and duration_delta <= STRONG_MATCH_MAX_DURATION_DELTA_SECONDS
+
+
 def pair_score(item_a: dict, item_b: dict) -> float:
     """item_*: {"Content_ID":..., "Platform":..., "Caption":...,
     "Publish_Date": datetime or None, "Duration": seconds or None}.
@@ -132,6 +162,9 @@ def pair_score(item_a: dict, item_b: dict) -> float:
     dur_score = _duration_proximity(item_a.get("Duration"), item_b.get("Duration"))
 
     if dur_score is not None:
+        if _is_strong_signal_match(item_a, item_b):
+            return 1.0
+
         # Duration + publish date are close to a unique fingerprint for
         # "the same upload, re-posted" -- confirmed live (Aug 2026) that
         # relying on caption alone missed real matches because captions

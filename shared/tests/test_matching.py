@@ -91,6 +91,26 @@ class TestPairScore(unittest.TestCase):
         b = item("tt:1", "TikTok", "Weekend recap", 10, duration=90.0)
         self.assertLess(pair_score(a, b), AUTO_CONFIRM_SCORE)
 
+    def test_strong_date_and_duration_signal_auto_confirms_despite_unrelated_caption(self):
+        """Requested directly (Aug 2026): duration within 2 seconds and
+        date within 2 days should auto-confirm on its own, without needing
+        caption text to agree -- the old weighted formula alone left tight
+        duration/date matches with a so-so caption stuck in Pending
+        Matches even though duration+date that close is effectively a
+        fingerprint (old formula would have scored this ~0.57, below
+        AUTO_CONFIRM_SCORE)."""
+        a = item("yt:1", "YouTube", "Totally unrelated title about hiking", 10, duration=42.0)
+        b = item("tt:1", "TikTok", "A completely different caption about cooking", 11, duration=43.0)
+        self.assertEqual(pair_score(a, b), 1.0)
+
+    def test_duration_just_outside_strong_match_falls_back_to_weighted_formula(self):
+        """3 seconds apart clears the normal MAX_DURATION_DELTA_SECONDS
+        tolerance but not the stricter STRONG_MATCH_MAX_DURATION_DELTA_SECONDS
+        bar -- with an unrelated caption, this should NOT auto-confirm."""
+        a = item("yt:1", "YouTube", "Totally unrelated title about hiking", 10, duration=42.0)
+        b = item("tt:1", "TikTok", "A completely different caption about cooking", 10, duration=45.0)
+        self.assertLess(pair_score(a, b), AUTO_CONFIRM_SCORE)
+
     def test_instagram_missing_duration_falls_back_to_caption(self):
         """Instagram never exposes Duration -- a pair involving it must
         still use the caption-led scheme, not silently score 0 just
