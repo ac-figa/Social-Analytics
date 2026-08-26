@@ -62,13 +62,16 @@
               {% endif %}
             </td>
             <td class="classify-cell">
+              {% if item.Partnership and item.Partnership != 'Unclassified' %}
+                <span class="classified-badge">{{ item.Partnership }}{{ ' / ' + item.Content_Type if item.Content_Type and item.Content_Type != 'Unclassified' else '' }}</span>
+              {% endif %}
               <form method="post" action="{{ url_for('classify') }}" class="browse-classify-form">
                 <input type="hidden" name="group_id" value="{{ item.Group_ID or '' }}">
                 <input type="hidden" name="content_id" value="{{ item.Content_ID }}">
                 <input type="hidden" name="platform" value="{{ platform }}">
                 <input type="hidden" name="platform_post_id" value="{{ item.Platform_Post_ID }}">
-                <input type="text" name="partnership" list="partnerships-datalist" placeholder="Partnership" class="partnership-input">
-                <input type="text" name="content_type" list="browse-content-types-{{ loop.index }}" placeholder="Content Type" class="content-type-input">
+                <input type="text" name="partnership" list="partnerships-datalist" placeholder="Partnership" class="partnership-input" value="{{ item.Partnership if item.Partnership and item.Partnership != 'Unclassified' else '' }}">
+                <input type="text" name="content_type" list="browse-content-types-{{ loop.index }}" placeholder="Content Type" class="content-type-input" value="{{ item.Content_Type if item.Content_Type and item.Content_Type != 'Unclassified' else '' }}">
                 <datalist id="browse-content-types-{{ loop.index }}"></datalist>
                 <button type="submit">Save</button>
                 <button type="submit" name="action" value="organic" formnovalidate class="organic-btn">Organic</button>

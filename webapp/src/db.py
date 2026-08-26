@@ -284,10 +284,12 @@ def list_latest_items(client: bigquery.Client, platform: str, limit: int = 50, a
     SELECT
       ci.Content_ID, ci.Platform_Post_ID, ci.Account_Username, ci.Caption, ci.Publish_Date, ci.Duration,
       ci.Views, ci.Likes, ci.Comments, ci.Shares, ci.Permalink,
-      m.Group_ID, m.Confirmed
+      m.Group_ID, m.Confirmed, g.Partnership, g.Content_Type
     FROM `{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.content_items` ci
     LEFT JOIN `{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.content_group_members` m
       ON ci.Content_ID = m.Content_ID
+    LEFT JOIN `{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.content_groups` g
+      ON m.Group_ID = g.Group_ID
     WHERE ci.Platform = @platform
     {account_clause}
     ORDER BY ci.Publish_Date DESC
