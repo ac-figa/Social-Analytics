@@ -73,7 +73,10 @@ def queue():
     client = db.get_client()
     unclassified_only = request.args.get("all") != "1"
     collabs_only = request.args.get("collabs") == "1"
-    groups = db.list_classification_queue(client, unclassified_only=unclassified_only, collabs_only=collabs_only)
+    limit = request.args.get("limit", default=100, type=int)
+    if limit not in (100, 250, 500, 1000):
+        limit = 100
+    groups = db.list_classification_queue(client, unclassified_only=unclassified_only, collabs_only=collabs_only, limit=limit)
     partnerships = db.list_partnerships(client)
     partnership_content_types = {p["Partnership"]: p["Content_Types"] for p in partnerships}
     return render_template(
@@ -83,6 +86,7 @@ def queue():
         partnership_content_types=partnership_content_types,
         unclassified_only=unclassified_only,
         collabs_only=collabs_only,
+        limit=limit,
     )
 
 
@@ -203,8 +207,11 @@ def browse():
     if account not in accounts:
         account = None
     items = db.list_latest_items(client, platform, limit=50, account=account)
+    partnerships = db.list_partnerships(client)
+    partnership_content_types = {p["Partnership"]: p["Content_Types"] for p in partnerships}
     return render_template(
         "browse.html", items=items, platform=platform, platforms=PLATFORMS, accounts=accounts, account=account,
+        partnerships=partnerships, partnership_content_types=partnership_content_types,
     )
 
 

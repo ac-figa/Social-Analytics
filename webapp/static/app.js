@@ -3,7 +3,7 @@
   var partnershipContentTypes = dataEl ? JSON.parse(dataEl.textContent) : {};
 
   function updateContentTypes(partnershipInput) {
-    var row = partnershipInput.closest(".queue-row");
+    var row = partnershipInput.closest("form");
     if (!row) return;
     var contentTypeInput = row.querySelector(".content-type-input");
     if (!contentTypeInput) return;

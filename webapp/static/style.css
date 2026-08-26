@@ -288,6 +288,19 @@ button:disabled { background: var(--muted); cursor: default; }
 .match-pending { background: #fff4d6; color: #a5720a; }
 .match-none { background: #fbe9e8; color: var(--red); }
 
+.classify-cell { white-space: nowrap; }
+.browse-classify-form { display: flex; gap: 6px; align-items: center; }
+.browse-classify-form input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  width: 100px;
+}
+.browse-classify-form button { padding: 6px 10px; font-size: 12px; }
+.browse-classify-form .organic-btn { background: var(--muted); }
+.browse-classify-form .organic-btn:hover { background: #55585e; }
+
 #sync-status { margin-top: 20px; }
 #sync-log {
   background: #16171a;

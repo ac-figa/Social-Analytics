@@ -4,15 +4,22 @@
   <h1>Classification Queue</h1>
 
   <div class="filters">
-    <a class="filter-toggle {{ 'active' if unclassified_only else '' }}" href="{{ url_for('queue', collabs='1' if collabs_only else None) }}">Unclassified only</a>
-    <a class="filter-toggle {{ 'active' if not unclassified_only else '' }}" href="{{ url_for('queue', all='1', collabs='1' if collabs_only else None) }}">All</a>
+    <a class="filter-toggle {{ 'active' if unclassified_only else '' }}" href="{{ url_for('queue', collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">Unclassified only</a>
+    <a class="filter-toggle {{ 'active' if not unclassified_only else '' }}" href="{{ url_for('queue', all='1', collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">All</a>
     <span class="sep">|</span>
-    <a class="filter-toggle {{ 'active' if collabs_only else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1') }}">Instagram Collabs only</a>
+    <a class="filter-toggle {{ 'active' if collabs_only else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1', limit=limit if limit != 100 else None) }}">Instagram Collabs only</a>
     {% if collabs_only %}
-      <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None) }}">Clear collab filter</a>
+      <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None, limit=limit if limit != 100 else None) }}">Clear collab filter</a>
     {% endif %}
     <span class="sep">|</span>
-    <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None) }}">&#8635; Refresh</a>
+    <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">&#8635; Refresh</a>
+  </div>
+
+  <div class="filters">
+    <span class="meta">Show:</span>
+    {% for n in [100, 250, 500, 1000] %}
+      <a class="filter-toggle {{ 'active' if limit == n else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None, limit=n if n != 100 else None) }}">{{ n }}</a>
+    {% endfor %}
   </div>
 
   {% if not groups %}
