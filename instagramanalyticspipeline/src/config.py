@@ -1,10 +1,24 @@
-"""Environment-driven configuration. Loaded once at import time."""
+"""Environment-driven configuration. Loaded once at import time.
+
+Supports more than one Instagram account sharing this same pipeline/table
+(e.g. a second brand page) via the ENV_FILE override: create a second env
+file (e.g. .env.calciobros, copied from .env.example with that account's
+own META_ACCESS_TOKEN/IG_USER_ID) and run
+
+  ENV_FILE=.env.calciobros python -m src.pipeline
+
+instead of the normal `python -m src.pipeline`. Both accounts' posts land
+in the same instagram_master table (and the same shared content_items
+layer), distinguished by the Account_ID/Account_Username columns that are
+already populated per-row -- see bigquery_store.mark_missing_as_deleted()
+for why that per-account scoping matters.
+"""
 import logging
 import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.environ.get("ENV_FILE", ".env"))
 
 
 def _require(name: str) -> str:

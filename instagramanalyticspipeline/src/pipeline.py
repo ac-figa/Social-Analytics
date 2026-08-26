@@ -157,8 +157,9 @@ def run(full_refresh: bool = False) -> int:
     bigquery_store.upsert_master_rows(bq_client, rows)
     # Uses every post still listed by the API (all_media_ids), not just the
     # ones refreshed this run -- otherwise every skipped, still-live post
-    # would get wrongly marked Deleted_or_Unavailable.
-    bigquery_store.mark_missing_as_deleted(bq_client, all_media_ids)
+    # would get wrongly marked Deleted_or_Unavailable. Scoped to this
+    # account's Account_ID -- see mark_missing_as_deleted()'s docstring.
+    bigquery_store.mark_missing_as_deleted(bq_client, all_media_ids, account_info["id"])
     _sync_to_shared_content_layer(rows)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()

@@ -197,16 +197,25 @@ def upsert_master_rows(client: bigquery.Client, rows: list) -> None:
     log.info("Upserted %d rows into %s", len(rows), MASTER_TABLE)
 
 
-def mark_missing_as_deleted(client: bigquery.Client, current_post_ids: list) -> None:
+def mark_missing_as_deleted(client: bigquery.Client, current_post_ids: list, account_id: str) -> None:
     """Anything Active in the master table but absent from this run's pull
-    is marked, never deleted, so history is preserved."""
+    is marked, never deleted, so history is preserved.
+
+    Scoped to account_id -- instagram_master can hold more than one
+    Instagram account's posts (e.g. a second brand page synced via its own
+    .env), all sharing this one table/dataset. Without this scope, running
+    the sync for account B would see account A's posts as "not in this
+    run's pull" and wrongly mark every single one of them deleted."""
     query = f"""
     UPDATE `{_table_ref(MASTER_TABLE)}`
     SET API_Status = 'Deleted_or_Unavailable'
-    WHERE API_Status = 'Active' AND Post_ID NOT IN UNNEST(@ids)
+    WHERE API_Status = 'Active' AND Account_ID = @account_id AND Post_ID NOT IN UNNEST(@ids)
     """
     job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ArrayQueryParameter("ids", "STRING", current_post_ids)]
+        query_parameters=[
+            bigquery.ArrayQueryParameter("ids", "STRING", current_post_ids),
+            bigquery.ScalarQueryParameter("account_id", "STRING", account_id),
+        ]
     )
     result = client.query(query, job_config=job_config).result()
     if result.num_dml_affected_rows:
