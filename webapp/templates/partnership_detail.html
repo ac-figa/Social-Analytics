@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ partnership }}{% endblock %}
+{% block content %}
+  <p class="subtitle"><a href="{{ url_for('partnerships') }}">&larr; All partnerships</a></p>
+  <h1>{{ partnership }}</h1>
+
+  {% if not report.groups %}
+    <p class="empty">No videos classified under this partnership yet.</p>
+  {% else %}
+    <div class="stat-tiles">
+      <div class="stat-tile">
+        <span class="stat-value">{{ report.total_videos }}</span>
+        <span class="stat-label">Videos posted</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value">{{ '{:,}'.format(report.totals.Views) }}</span>
+        <span class="stat-label">Total Views</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value">{{ '{:,}'.format(report.totals.Likes) }}</span>
+        <span class="stat-label">Total Likes</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value">{{ '{:,}'.format(report.totals.Comments) }}</span>
+        <span class="stat-label">Total Comments</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value">{{ '{:,}'.format(report.totals.Shares) }}</span>
+        <span class="stat-label">Total Shares</span>
+      </div>
+    </div>
+
+    <div class="breakdown-row">
+      <div class="breakdown-card">
+        <h3>By Content Type</h3>
+        <ul class="breakdown-list">
+          {% for content_type, count in report.content_type_breakdown %}
+            <li><span>{{ content_type }}</span><span class="breakdown-count">{{ count }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="breakdown-card">
+        <h3>By Platform</h3>
+        <ul class="breakdown-list">
+          {% for platform, stats in report.platform_breakdown %}
+            <li>
+              <span class="platform-badge platform-{{ platform|lower }}">{{ platform }}</span>
+              <span>{{ stats.count }} video(s) &middot; {{ '{:,}'.format(stats.Views) }} views</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <h2 class="section-title">Videos</h2>
+    <div class="queue">
+      {% for g in report.groups %}
+        <div class="queue-row partnership-video-row">
+          <span class="content-type-badge">{{ g.Content_Type or 'Unclassified' }}</span>
+          <div class="members">
+            {% for m in g.Members %}
+              <div class="member">
+                <span class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption">{{ (m.Caption or '(no caption)')[:80] }}</a>
+                <span class="meta">{{ m.Publish_Date.strftime('%Y-%m-%d') if m.Publish_Date else '' }} &middot; {{ '{:,}'.format(m.Views) if m.Views is not none else '?' }} views</span>
+              </div>
+            {% endfor %}
+          </div>
+          <div class="group-stats">
+            <span>{{ '{:,}'.format(g.Views or 0) }} views</span>
+            <span>{{ '{:,}'.format(g.Likes or 0) }} likes</span>
+            <span>{{ '{:,}'.format(g.Comments or 0) }} comments</span>
+            <span>{{ '{:,}'.format(g.Shares or 0) }} shares</span>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

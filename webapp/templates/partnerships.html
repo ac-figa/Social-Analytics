@@ -11,7 +11,7 @@
   <div class="partnership-list">
     {% for p in partnerships %}
       <div class="partnership-card">
-        <h2>{{ p.Partnership }}</h2>
+        <h2><a href="{{ url_for('partnership_detail', partnership=p.Partnership) }}">{{ p.Partnership }}</a></h2>
         <ul class="content-types">
           {% for ct in p.Content_Types %}
             <li>{{ ct }}</li>

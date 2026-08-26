@@ -286,3 +286,33 @@ def add_partnership(client: bigquery.Client, partnership: str) -> None:
 
 def add_content_type(client: bigquery.Client, partnership: str, content_type: str) -> None:
     content_store.add_content_type(client, partnership, content_type)
+
+
+def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
+    """Shapes content_store.get_partnership_groups() into what the
+    per-partnership dashboard page needs: overall totals, a breakdown by
+    Content_Type, and a breakdown by Platform (each group can carry stats
+    for more than one platform), on top of the raw per-video list."""
+    groups = content_store.get_partnership_groups(client, partnership)
+
+    totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0}
+    content_type_counts: dict = {}
+    platform_stats: dict = {}
+
+    for g in groups:
+        for key in totals:
+            totals[key] += g.get(key) or 0
+        content_type_counts[g["Content_Type"] or "Unclassified"] = content_type_counts.get(g["Content_Type"] or "Unclassified", 0) + 1
+        for m in g["Members"]:
+            stats = platform_stats.setdefault(m["Platform"], {"count": 0, "Views": 0, "Likes": 0, "Comments": 0, "Shares": 0})
+            stats["count"] += 1
+            for key in ("Views", "Likes", "Comments", "Shares"):
+                stats[key] += m.get(key) or 0
+
+    return {
+        "groups": groups,
+        "total_videos": len(groups),
+        "totals": totals,
+        "content_type_breakdown": sorted(content_type_counts.items(), key=lambda kv: -kv[1]),
+        "platform_breakdown": sorted(platform_stats.items(), key=lambda kv: kv[0]),
+    }

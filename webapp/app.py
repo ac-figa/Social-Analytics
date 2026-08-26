@@ -164,6 +164,13 @@ def add_partnership():
     return redirect(url_for("partnerships"))
 
 
+@app.route("/partnerships/<partnership>")
+def partnership_detail(partnership):
+    client = db.get_client()
+    report = db.get_partnership_report(client, partnership)
+    return render_template("partnership_detail.html", partnership=partnership, report=report)
+
+
 @app.route("/partnerships/content-types/add", methods=["POST"])
 def add_content_type():
     partnership = request.form.get("partnership", "").strip()

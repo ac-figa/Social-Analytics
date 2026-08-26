@@ -805,6 +805,41 @@ def add_content_type(client: bigquery.Client, partnership: str, content_type: st
     ).result()
 
 
+def get_partnership_groups(client: bigquery.Client, partnership: str) -> list:
+    """Every confirmed content_group classified under one Partnership, each
+    with its full member list (one row per platform it was posted to) and
+    per-group summed stats -- the webapp's per-partnership report page.
+    One group here is "one video posted" regardless of how many platforms
+    it went out on, matching how a partner actually thinks about a
+    campaign's deliverables."""
+    query = f"""
+    SELECT
+      g.Group_ID, g.Content_Type,
+      ARRAY_AGG(
+        STRUCT(ci.Content_ID AS Content_ID, ci.Platform AS Platform, ci.Caption AS Caption,
+               ci.Publish_Date AS Publish_Date, ci.Permalink AS Permalink,
+               ci.Views AS Views, ci.Likes AS Likes, ci.Comments AS Comments, ci.Shares AS Shares)
+        ORDER BY ci.Platform
+      ) AS Members,
+      MIN(ci.Publish_Date) AS Publish_Date,
+      SUM(ci.Views) AS Views, SUM(ci.Likes) AS Likes,
+      SUM(ci.Comments) AS Comments, SUM(ci.Shares) AS Shares
+    FROM `{_table_ref(CONTENT_GROUPS_TABLE)}` g
+    JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m ON g.Group_ID = m.Group_ID AND m.Confirmed = TRUE
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
+    WHERE g.Partnership = @partnership
+    GROUP BY g.Group_ID, g.Content_Type
+    ORDER BY Publish_Date DESC
+    """
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("partnership", "STRING", partnership)]
+        ),
+    ).result()
+    return [dict(r) for r in rows]
+
+
 def list_classification_queue(
     client: bigquery.Client, unclassified_only: bool = True, limit: int = 100
 ) -> list:
