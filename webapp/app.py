@@ -164,6 +164,15 @@ def add_partnership():
     return redirect(url_for("partnerships"))
 
 
+@app.route("/partnerships/delete", methods=["POST"])
+def delete_partnership():
+    name = request.form.get("partnership", "").strip()
+    if name:
+        ok, message = db.delete_partnership(db.get_client(), name)
+        flash(message, "success" if ok else "error")
+    return redirect(url_for("partnerships"))
+
+
 @app.route("/partnerships/<partnership>")
 def partnership_detail(partnership):
     client = db.get_client()

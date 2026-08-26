@@ -301,11 +301,33 @@ def list_latest_items(client: bigquery.Client, platform: str, limit: int = 50) -
 
 
 def list_partnerships(client: bigquery.Client) -> list:
-    return content_store.list_partnerships(client)
+    """Each partnership plus its Video_Count, so the Partnerships page can
+    show how many videos are under it without a click -- makes it obvious
+    which ones are empty and safe to delete."""
+    partnerships = content_store.list_partnerships(client)
+    counts = content_store.get_partnership_video_counts(client)
+    for p in partnerships:
+        p["Video_Count"] = counts.get(p["Partnership"], 0)
+    return partnerships
 
 
 def add_partnership(client: bigquery.Client, partnership: str) -> None:
     content_store.add_partnership(client, partnership)
+
+
+def delete_partnership(client: bigquery.Client, partnership: str) -> tuple:
+    """Refuses (without deleting anything) if the partnership still has
+    classified videos -- deleting the reference row wouldn't touch those
+    groups' own Partnership field, so they'd silently vanish from the
+    Partnerships list/dropdowns while still being "classified" under a
+    name that no longer exists anywhere in the UI. Returns (ok, message)
+    for the caller to flash."""
+    counts = content_store.get_partnership_video_counts(client)
+    count = counts.get(partnership, 0)
+    if count > 0:
+        return False, f"Can't delete '{partnership}' -- it still has {count} video(s) classified under it."
+    content_store.delete_partnership(client, partnership)
+    return True, f"Deleted '{partnership}'."
 
 
 def add_content_type(client: bigquery.Client, partnership: str, content_type: str) -> None:

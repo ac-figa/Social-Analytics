@@ -148,10 +148,31 @@ button:disabled { background: var(--muted); cursor: default; }
   border-radius: 8px;
   padding: 16px;
 }
-.partnership-card h2 { font-size: 16px; margin: 0 0 8px; }
+.partnership-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.partnership-card h2 { font-size: 16px; margin: 0; }
 .partnership-card h2 a { color: var(--text); text-decoration: none; }
 .partnership-card h2 a:hover { color: var(--accent); text-decoration: underline; }
 .content-types { margin: 0 0 12px; padding-left: 18px; font-size: 14px; color: var(--muted); }
+
+.video-count-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.video-count-empty { background: #fbe9e8; color: var(--red); }
+@media (prefers-color-scheme: dark) {
+  .video-count-empty { background: #3d1f1d; color: #f87171; }
+}
+
+.partnership-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.partnership-card-actions .inline-form { margin-bottom: 0; flex: 1; }
+.delete-btn { background: var(--red); }
+.delete-btn:hover { background: #a8362e; }
 
 .stat-tiles {
   display: flex;

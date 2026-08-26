@@ -804,6 +804,39 @@ def list_partnerships(client: bigquery.Client) -> list:
     return [{"Partnership": r["Partnership"], "Content_Types": list(r["Content_Types"])} for r in client.query(query).result()]
 
 
+def get_partnership_video_counts(client: bigquery.Client) -> dict:
+    """{Partnership: video_count} for every partnership in the reference
+    table, including 0 for one with no classified videos yet -- one
+    content_groups row is one real-world video regardless of how many
+    platforms it's cross-posted to or whether all its members are
+    Confirmed, so this is a plain count of that table, not a join through
+    content_group_members. Lets the Partnerships page show a count next
+    to each partnership without a separate query per partnership."""
+    query = f"""
+    SELECT p.Partnership, COUNT(g.Group_ID) AS Video_Count
+    FROM `{_table_ref(PARTNERSHIPS_TABLE)}` p
+    LEFT JOIN `{_table_ref(CONTENT_GROUPS_TABLE)}` g ON p.Partnership = g.Partnership
+    GROUP BY p.Partnership
+    """
+    return {r["Partnership"]: r["Video_Count"] for r in client.query(query).result()}
+
+
+def delete_partnership(client: bigquery.Client, partnership: str) -> None:
+    """Removes a partnership and its content types from the reference
+    tables. Caller's responsibility to confirm it has no classified videos
+    first (see get_partnership_video_counts) -- this doesn't touch
+    content_groups at all, so a video still classified under a deleted
+    partnership would keep that Partnership string, just no longer show up
+    in the Partnerships list or its dropdowns."""
+    for table in (PARTNERSHIP_CONTENT_TYPES_TABLE, PARTNERSHIPS_TABLE):
+        client.query(
+            f"DELETE FROM `{_table_ref(table)}` WHERE Partnership = @partnership",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("partnership", "STRING", partnership)]
+            ),
+        ).result()
+
+
 def add_partnership(client: bigquery.Client, partnership: str) -> None:
     # FROM (SELECT 1) is required -- BigQuery rejects a WHERE clause on a
     # SELECT with no FROM at all ("Query without FROM clause cannot have
