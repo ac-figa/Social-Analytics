@@ -11,6 +11,8 @@
     {% if collabs_only %}
       <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None) }}">Clear collab filter</a>
     {% endif %}
+    <span class="sep">|</span>
+    <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None) }}">&#8635; Refresh</a>
   </div>
 
   {% if not groups %}
@@ -46,7 +48,11 @@
           {% for m in g.Members %}
             <div class="member">
               <span class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</span>
-              <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption">{{ (m.Caption or '(no caption)')[:90] }}</a>
+              {% if m.Platform == 'Instagram' %}
+                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption caption-full">{{ m.Caption or '(no caption)' }}</a>
+              {% else %}
+                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption">{{ (m.Caption or '(no caption)')[:90] }}</a>
+              {% endif %}
               <span class="meta">{{ m.Publish_Date.strftime('%Y-%m-%d') if m.Publish_Date else '' }} &middot; {{ '{:,}'.format(m.Views) if m.Views is not none else '?' }} views</span>
             </div>
           {% endfor %}
