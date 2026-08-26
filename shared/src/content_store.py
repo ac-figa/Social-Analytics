@@ -18,6 +18,7 @@ Same upsert pattern as the Instagram pipeline's bigquery_store.py:
 truncate-and-load a staging table, then MERGE.
 """
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -26,6 +27,26 @@ from google.cloud import bigquery
 from . import config
 
 log = logging.getLogger(__name__)
+
+_SLASH_SPACING_RE = re.compile(r"\s*/\s*")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def normalize_content_type(content_type: str) -> str:
+    """Collapses whitespace and normalizes spacing around '/' so
+    "Skit/Educational", "Skit / Educational", and "Skit /Educational" are
+    all treated as the same content type. Confirmed live (Aug 2026) that
+    free-text entry -- both manual and via the legacy classifications
+    backfill -- had produced two separate partnership_content_types rows
+    for what was meant to be one type, purely from slash-spacing
+    inconsistency. Applied at every write path that touches Content_Type
+    (set_classification, bulk_set_classifications, create_group,
+    bulk_create_classified_groups, add_content_type,
+    propagate_bulk_classifications) so the same normalization can never be
+    skipped by calling one of them directly."""
+    if not content_type:
+        return content_type
+    return _WHITESPACE_RE.sub(" ", _SLASH_SPACING_RE.sub(" / ", content_type.strip()))
 
 CONTENT_ITEMS_TABLE = "content_items"
 CONTENT_ITEMS_STAGING_TABLE = "content_items_staging"
@@ -397,6 +418,7 @@ def create_group(
     move it out first (see move_member) if it does."""
     group_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    content_type = normalize_content_type(content_type)
 
     client.query(
         f"""
@@ -488,7 +510,7 @@ def bulk_create_classified_groups(client: bigquery.Client, items: list, updated_
     client.load_table_from_json(
         [
             {
-                "Group_ID": gid, "Partnership": it["partnership"], "Content_Type": it["content_type"],
+                "Group_ID": gid, "Partnership": it["partnership"], "Content_Type": normalize_content_type(it["content_type"]),
                 "Created_At": now, "Updated_At": now, "Updated_By": updated_by,
             }
             for gid, it in zip(group_ids, items)
@@ -542,6 +564,8 @@ def bulk_set_classifications(client: bigquery.Client, updates: list, updated_by:
     for why this matters for the webapp's "Apply All" button."""
     if not updates:
         return
+    for u in updates:
+        u["Content_Type"] = normalize_content_type(u["Content_Type"])
     staging_id = _table_ref("content_groups_classify_staging")
     staging_schema = [
         bigquery.SchemaField("Group_ID", "STRING", mode="REQUIRED"),
@@ -618,7 +642,7 @@ def propagate_bulk_classifications(client: bigquery.Client, platform: str, items
     ]
     client.create_table(bigquery.Table(staging_id, schema=staging_schema), exists_ok=True)
     client.load_table_from_json(
-        [{id_column: it["post_id"], "Partnership": it["partnership"], "Content_Type": it["content_type"]} for it in items],
+        [{id_column: it["post_id"], "Partnership": it["partnership"], "Content_Type": normalize_content_type(it["content_type"])} for it in items],
         staging_id,
         job_config=bigquery.LoadJobConfig(
             schema=staging_schema, write_disposition="WRITE_TRUNCATE",
@@ -728,6 +752,7 @@ def confirm_membership(client: bigquery.Client, group_id: str, content_id: str) 
 def set_classification(
     client: bigquery.Client, group_id: str, partnership: str, content_type: str, updated_by: str
 ) -> None:
+    content_type = normalize_content_type(content_type)
     query = f"""
     UPDATE `{_table_ref(CONTENT_GROUPS_TABLE)}`
     SET Partnership = @partnership, Content_Type = @content_type,
@@ -784,6 +809,7 @@ def add_partnership(client: bigquery.Client, partnership: str) -> None:
 def add_content_type(client: bigquery.Client, partnership: str, content_type: str) -> None:
     """Also ensures the parent partnership exists, so the dashboard can
     add a content type for a brand-new partnership in one action."""
+    content_type = normalize_content_type(content_type)
     add_partnership(client, partnership)
     query = f"""
     INSERT INTO `{_table_ref(PARTNERSHIP_CONTENT_TYPES_TABLE)}` (Partnership, Content_Type, Created_At)
