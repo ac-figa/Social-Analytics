@@ -270,34 +270,56 @@ def reject_pending(client: bigquery.Client, group_id: str, content_id: str) -> N
     content_store.remove_member(client, group_id, content_id)
 
 
-def list_latest_items(client: bigquery.Client, platform: str, limit: int = 50) -> list:
+def list_latest_items(client: bigquery.Client, platform: str, limit: int = 50, account: str = None) -> list:
     """The 50 most recently published content_items for one platform,
     with whether each one is currently in a group (and if so, which) --
     lets you see the raw synced data (caption/duration/date as the
     matcher actually sees them) next to real match outcomes, to spot why
-    two platforms aren't linking up."""
+    two platforms aren't linking up. account: optional Account_Username
+    filter -- a platform can carry more than one account's posts (e.g.
+    Instagram holding both the main page and Calcio Bros, all sharing
+    this same table -- see instagramanalyticspipeline/src/config.py)."""
+    account_clause = "AND ci.Account_Username = @account" if account else ""
     query = f"""
     SELECT
-      ci.Content_ID, ci.Platform_Post_ID, ci.Caption, ci.Publish_Date, ci.Duration,
+      ci.Content_ID, ci.Platform_Post_ID, ci.Account_Username, ci.Caption, ci.Publish_Date, ci.Duration,
       ci.Views, ci.Likes, ci.Comments, ci.Shares, ci.Permalink,
       m.Group_ID, m.Confirmed
     FROM `{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.content_items` ci
     LEFT JOIN `{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.content_group_members` m
       ON ci.Content_ID = m.Content_ID
     WHERE ci.Platform = @platform
+    {account_clause}
     ORDER BY ci.Publish_Date DESC
     LIMIT @limit
+    """
+    params = [
+        bigquery.ScalarQueryParameter("platform", "STRING", platform),
+        bigquery.ScalarQueryParameter("limit", "INT64", limit),
+    ]
+    if account:
+        params.append(bigquery.ScalarQueryParameter("account", "STRING", account))
+    rows = client.query(query, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
+    return [dict(r) for r in rows]
+
+
+def list_accounts_for_platform(client: bigquery.Client, platform: str) -> list:
+    """Distinct Account_Username values synced for one platform -- lets
+    Browse only show an Account filter when a platform actually carries
+    more than one account's posts, instead of always showing one."""
+    query = f"""
+    SELECT DISTINCT Account_Username
+    FROM `{config.BQ_PROJECT_ID}.{config.SHARED_BQ_DATASET}.content_items`
+    WHERE Platform = @platform AND Account_Username IS NOT NULL
+    ORDER BY Account_Username
     """
     rows = client.query(
         query,
         job_config=bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("platform", "STRING", platform),
-                bigquery.ScalarQueryParameter("limit", "INT64", limit),
-            ]
+            query_parameters=[bigquery.ScalarQueryParameter("platform", "STRING", platform)]
         ),
     ).result()
-    return [dict(r) for r in rows]
+    return [r["Account_Username"] for r in rows]
 
 
 def list_partnerships(client: bigquery.Client) -> list:

@@ -198,8 +198,14 @@ def browse():
     if platform not in PLATFORMS:
         platform = "Instagram"
     client = db.get_client()
-    items = db.list_latest_items(client, platform, limit=50)
-    return render_template("browse.html", items=items, platform=platform, platforms=PLATFORMS)
+    accounts = db.list_accounts_for_platform(client, platform)
+    account = request.args.get("account") or None
+    if account not in accounts:
+        account = None
+    items = db.list_latest_items(client, platform, limit=50, account=account)
+    return render_template(
+        "browse.html", items=items, platform=platform, platforms=PLATFORMS, accounts=accounts, account=account,
+    )
 
 
 @app.route("/pending")
