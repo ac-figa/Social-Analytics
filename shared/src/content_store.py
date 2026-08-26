@@ -731,6 +731,24 @@ def remove_member(client: bigquery.Client, group_id: str, content_id: str) -> No
     ).result()
 
 
+def get_group_classification(client: bigquery.Client, group_id: str):
+    """(Partnership, Content_Type) for one group, or None if it doesn't
+    exist. Used when accepting a pending match: if the group it's joining
+    is already classified, that classification needs to be propagated to
+    the newly-confirmed platform's own *_classifications table too."""
+    rows = list(
+        client.query(
+            f"SELECT Partnership, Content_Type FROM `{_table_ref(CONTENT_GROUPS_TABLE)}` WHERE Group_ID = @group_id",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("group_id", "STRING", group_id)]
+            ),
+        ).result()
+    )
+    if not rows:
+        return None
+    return (rows[0]["Partnership"], rows[0]["Content_Type"])
+
+
 def confirm_membership(client: bigquery.Client, group_id: str, content_id: str) -> None:
     """Accepts a pending auto-suggested match (Confirmed=False -> True)."""
     query = f"""

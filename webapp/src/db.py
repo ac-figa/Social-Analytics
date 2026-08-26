@@ -239,7 +239,31 @@ def list_pending_matches(client: bigquery.Client, months: int = None) -> list:
 
 
 def confirm_pending(client: bigquery.Client, group_id: str, content_id: str) -> None:
+    """Accepting a pending match only ever flips that one membership's
+    Confirmed flag -- but if the group it's joining was already classified
+    (e.g. a TikTok match accepted into an Instagram/Facebook group that's
+    already "Nike"), that classification needs to reach TikTok's own
+    tiktok_classifications table too, or tiktok_master would keep showing
+    Unclassified for a video that's really already classified via its
+    group. content_store.confirm_membership() alone doesn't know about
+    classification at all, so this has to happen here."""
     content_store.confirm_membership(client, group_id, content_id)
+
+    classification = content_store.get_group_classification(client, group_id)
+    if not classification:
+        return
+    partnership, content_type = classification
+    if partnership in (None, "Unclassified"):
+        return
+
+    info = content_store.get_platform_and_group_for_content_ids(client, [content_id]).get(content_id)
+    if not info:
+        return
+    post_id = content_id.split(":", 1)[1]
+    content_store.propagate_bulk_classifications(
+        client, info["Platform"], [{"post_id": post_id, "partnership": partnership, "content_type": content_type}],
+        updated_by=UPDATED_BY,
+    )
 
 
 def reject_pending(client: bigquery.Client, group_id: str, content_id: str) -> None:
