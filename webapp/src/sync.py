@@ -8,6 +8,7 @@ Runs in a background thread (not the request thread) since a full run
 takes several minutes -- an HTTP request that long would just time out in
 most browsers/proxies. The dashboard polls get_status() instead.
 """
+import os
 import subprocess
 import sys
 import threading
@@ -46,10 +47,11 @@ def _set_step(name: str) -> None:
     _append_log(f"--- {name} ---")
 
 
-def _run_step(name: str, cmd: list, cwd) -> None:
+def _run_step(name: str, cmd: list, cwd, extra_env: dict = None) -> None:
     _set_step(name)
+    env = {**os.environ, **extra_env} if extra_env else None
     proc = subprocess.Popen(
-        cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+        cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env
     )
     for line in proc.stdout:
         _append_log(line.rstrip())
@@ -70,6 +72,15 @@ def _run_all() -> None:
         repo_root = config.SHARED_DIR.parent
         for platform, pipeline_dir in config.PIPELINE_DIRS.items():
             _run_step(f"Syncing {platform}", [sys.executable, "-m", "src.pipeline"], pipeline_dir)
+
+        for extra in config.EXTRA_ACCOUNT_SYNCS:
+            if not (extra["pipeline_dir"] / extra["env_file"]).exists():
+                _append_log(f"--- Skipping {extra['label']} ({extra['env_file']} not found) ---")
+                continue
+            _run_step(
+                f"Syncing {extra['label']}", [sys.executable, "-m", "src.pipeline"], extra["pipeline_dir"],
+                extra_env={"ENV_FILE": extra["env_file"]},
+            )
 
         _run_step("Matching across platforms", [sys.executable, "-m", "shared.src.run_matching"], repo_root)
         _run_step(

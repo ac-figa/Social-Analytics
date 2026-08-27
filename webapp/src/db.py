@@ -388,18 +388,38 @@ def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
     }
 
 
-def get_media_kit(client: bigquery.Client) -> dict:
+def _account_brand(account_username: str) -> str:
+    """Classifies an account_stats row by brand for the Media Kit's
+    filter -- a substring match on Account_Username rather than a stored
+    Brand column, since only two brands exist right now and Instagram/
+    TikTok/etc. handles for the same brand aren't guaranteed to be
+    spelled identically. Everything not matched defaults to Bello Bros."""
+    if account_username and "calcio" in account_username.lower():
+        return "Calcio Bros"
+    return "Bello Bros"
+
+
+def get_media_kit(client: bigquery.Client, brand: str = None) -> dict:
     """Media Kit page data: one card per account with latest follower/
     subscriber count (from the daily account_stats snapshots) plus Views
     in the last 30/90/270 days (computed live from content_items -- see
     content_store.get_views_in_window()'s docstring for why that's not
-    stored), and an aggregate total across every account -- every
-    Instagram account (Bello Bros + Calcio Bros) and every platform
-    summed together, the one number a brand pitch opens with. Views
-    window days are hardcoded here rather than made configurable --
-    exactly what a media kit for brands conventionally reports, no
-    reason to expose more knobs than that."""
+    stored), and an aggregate total across the accounts shown -- every
+    platform summed together, the one number a brand pitch opens with.
+    brand: optional filter (e.g. "Calcio Bros") -- when set, only that
+    brand's accounts are returned and totals are scoped to match, so the
+    combined total on screen always matches what's actually shown below
+    it. Views window days are hardcoded here rather than made
+    configurable -- exactly what a media kit for brands conventionally
+    reports, no reason to expose more knobs than that."""
     accounts = content_store.get_latest_account_stats(client)
+    for a in accounts:
+        a["Brand"] = _account_brand(a["Account_Username"])
+    available_brands = sorted({a["Brand"] for a in accounts})
+
+    if brand:
+        accounts = [a for a in accounts if a["Brand"] == brand]
+
     windows = (30, 90, 270)
     for a in accounts:
         for days in windows:
@@ -413,4 +433,4 @@ def get_media_kit(client: bigquery.Client) -> dict:
         for days in windows:
             totals[f"Views_{days}d"] += a.get(f"Views_{days}d") or 0
 
-    return {"accounts": accounts, "totals": totals}
+    return {"accounts": accounts, "totals": totals, "brands": available_brands}

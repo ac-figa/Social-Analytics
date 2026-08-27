@@ -77,6 +77,18 @@ PIPELINE_DIRS = {
 }
 SHARED_DIR = _REPO_ROOT / "shared"
 
+# Second-account syncs (a brand page sharing a platform's tables via its
+# own env file -- see instagramanalyticspipeline/src/config.py and
+# tiktokpipeline/src/config.py's ENV_FILE override). src/sync.py runs
+# each of these after the main four, setting ENV_FILE for that one
+# subprocess only. env_file is relative to pipeline_dir; a missing file
+# is skipped (logged, not fatal) rather than failing the whole sync --
+# lets this list grow ahead of every account actually being set up yet.
+EXTRA_ACCOUNT_SYNCS = [
+    {"label": "Instagram (Calcio Bros)", "pipeline_dir": PIPELINE_DIRS["Instagram"], "env_file": ".env.calciobros"},
+    {"label": "TikTok (Calcio Bros)", "pipeline_dir": PIPELINE_DIRS["TikTok"], "env_file": ".env.calciobros"},
+]
+
 # The Cloud Run deployment (see deploy/README.md) only ever copies
 # webapp/ and shared/ into the image -- never the four pipeline
 # directories or their .env files, since Sync would otherwise need every

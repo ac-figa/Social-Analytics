@@ -4,8 +4,17 @@
   <h1>Media Kit</h1>
   <p class="subtitle">Latest follower/subscriber counts and recent view volume across every account, for pulling into brand pitches.</p>
 
+  {% if brands|length > 1 %}
+    <div class="filters">
+      <a class="filter-toggle {{ 'active' if not brand else '' }}" href="{{ url_for('media_kit') }}">All Brands</a>
+      {% for b in brands %}
+        <a class="filter-toggle {{ 'active' if b == brand else '' }}" href="{{ url_for('media_kit', brand=b) }}">{{ b }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   {% if not accounts %}
-    <p class="empty">No account stats yet -- run a sync on each pipeline to capture the first snapshot.</p>
+    <p class="empty">No account stats{{ ' for ' + brand if brand else '' }} yet -- run a sync on each pipeline to capture the first snapshot.</p>
   {% else %}
     <h2 class="section-title">All Platforms Combined</h2>
     <div class="stat-tiles">
