@@ -362,15 +362,21 @@ def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
     """Shapes content_store.get_partnership_groups() into what the
     per-partnership dashboard page needs: overall totals, a breakdown by
     Content_Type, and a breakdown by Platform (each group can carry stats
-    for more than one platform), on top of the raw per-video list."""
+    for more than one platform), on top of the raw per-video list. Stories
+    classified under this partnership are folded into the same Views/
+    Likes/Shares totals (they're the same kind of engagement, just from a
+    different content type) -- Comments has no story equivalent so it
+    stays video-only, and Sticker_Taps/Replies are story-only additions
+    with no video equivalent."""
     groups = content_store.get_partnership_groups(client, partnership)
+    stories = content_store.list_stories(client, partnership=partnership)
 
-    totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0}
+    totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0, "Sticker_Taps": 0, "Replies": 0}
     content_type_counts: dict = {}
     platform_stats: dict = {}
 
     for g in groups:
-        for key in totals:
+        for key in ("Views", "Likes", "Comments", "Shares"):
             totals[key] += g.get(key) or 0
         content_type_counts[g["Content_Type"] or "Unclassified"] = content_type_counts.get(g["Content_Type"] or "Unclassified", 0) + 1
         for m in g["Members"]:
@@ -379,9 +385,14 @@ def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
             for key in ("Views", "Likes", "Comments", "Shares"):
                 stats[key] += m.get(key) or 0
 
+    for s in stories:
+        for key in ("Views", "Likes", "Shares", "Sticker_Taps", "Replies"):
+            totals[key] += s.get(key) or 0
+
     return {
         "groups": groups,
         "total_videos": len(groups),
+        "total_stories": len(stories),
         "totals": totals,
         "content_type_breakdown": sorted(content_type_counts.items(), key=lambda kv: -kv[1]),
         "platform_breakdown": sorted(platform_stats.items(), key=lambda kv: kv[0]),

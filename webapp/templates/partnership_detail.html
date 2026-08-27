@@ -4,14 +4,20 @@
   <p class="subtitle"><a href="{{ url_for('partnerships') }}">&larr; All partnerships</a></p>
   <h1>{{ partnership }}</h1>
 
-  {% if not report.groups %}
-    <p class="empty">No videos classified under this partnership yet.</p>
+  {% if not report.groups and not report.total_stories %}
+    <p class="empty">No videos or stories classified under this partnership yet.</p>
   {% else %}
     <div class="stat-tiles">
       <div class="stat-tile">
         <span class="stat-value">{{ report.total_videos }}</span>
         <span class="stat-label">Videos posted</span>
       </div>
+      {% if report.total_stories %}
+        <div class="stat-tile">
+          <span class="stat-value">{{ report.total_stories }}</span>
+          <span class="stat-label">Stories posted</span>
+        </div>
+      {% endif %}
       <div class="stat-tile">
         <span class="stat-value">{{ '{:,}'.format(report.totals.Views) }}</span>
         <span class="stat-label">Total Views</span>
@@ -28,6 +34,16 @@
         <span class="stat-value">{{ '{:,}'.format(report.totals.Shares) }}</span>
         <span class="stat-label">Total Shares</span>
       </div>
+      {% if report.total_stories %}
+        <div class="stat-tile">
+          <span class="stat-value">{{ '{:,}'.format(report.totals.Sticker_Taps) }}</span>
+          <span class="stat-label">Sticker Taps</span>
+        </div>
+        <div class="stat-tile">
+          <span class="stat-value">{{ '{:,}'.format(report.totals.Replies) }}</span>
+          <span class="stat-label">Story Replies</span>
+        </div>
+      {% endif %}
     </div>
 
     <div class="breakdown-row">
@@ -52,6 +68,7 @@
       </div>
     </div>
 
+    {% if report.groups %}
     <h2 class="section-title">Videos</h2>
     <div class="queue">
       {% for g in report.groups %}
@@ -75,5 +92,6 @@
         </div>
       {% endfor %}
     </div>
+    {% endif %}
   {% endif %}
 {% endblock %}
