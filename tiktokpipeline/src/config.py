@@ -6,6 +6,18 @@ rotate the refresh token itself on every refresh. update_refresh_token()
 below writes the new value back into .env so this is fully automatic
 across runs; there's nothing to update by hand after the one-time OAuth
 login that produced the first refresh token (see docs/SETUP.md).
+
+Supports more than one TikTok account sharing this same pipeline/table
+(e.g. a second brand page) via the ENV_FILE override, same convention as
+instagramanalyticspipeline/src/config.py:
+
+  ENV_FILE=.env.calciobros python -m src.pipeline
+
+This matters even more here than for Instagram: TikTok's refresh token
+rotates on every use, and update_refresh_token() below writes the new one
+back into whichever file _ENV_PATH points at -- if that stayed hardcoded
+to .env, a second account's rotated token would get written into the
+FIRST account's .env, corrupting it.
 """
 import logging
 import os
@@ -13,7 +25,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv, set_key
 
-_ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+_ENV_PATH = Path(__file__).resolve().parents[1] / os.environ.get("ENV_FILE", ".env")
 load_dotenv(_ENV_PATH)
 
 

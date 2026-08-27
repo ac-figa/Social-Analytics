@@ -19,6 +19,7 @@ HISTORY_STAGING_TABLE = "tiktok_insights_history_staging"
 
 MASTER_SCHEMA = [
     bigquery.SchemaField("Video_ID", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Account_Username", "STRING"),
     bigquery.SchemaField("Title", "STRING"),
     bigquery.SchemaField("Duration", "FLOAT64"),
     bigquery.SchemaField("Publish_Date", "TIMESTAMP"),
@@ -150,14 +151,26 @@ def upsert_master_rows(client: bigquery.Client, rows: list) -> None:
     log.info("Upserted %d rows into %s", len(rows), MASTER_TABLE)
 
 
-def mark_missing_as_deleted(client: bigquery.Client, current_video_ids: list) -> None:
+def mark_missing_as_deleted(client: bigquery.Client, current_video_ids: list, account_username: str) -> None:
+    """Anything Active in the master table but absent from this run's pull
+    is marked, never deleted, so history is preserved.
+
+    Scoped to account_username -- tiktok_master can hold more than one
+    TikTok account's videos (e.g. a second brand page synced via its own
+    .env, see config.py's ENV_FILE override). Without this scope, running
+    the sync for account B would see account A's videos as "not in this
+    run's pull" and wrongly mark every single one of them deleted -- see
+    the identical fix in instagramanalyticspipeline/src/bigquery_store.py."""
     query = f"""
     UPDATE `{_table_ref(MASTER_TABLE)}`
     SET API_Status = 'Deleted_or_Unavailable'
-    WHERE API_Status = 'Active' AND Video_ID NOT IN UNNEST(@ids)
+    WHERE API_Status = 'Active' AND Account_Username = @account_username AND Video_ID NOT IN UNNEST(@ids)
     """
     job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ArrayQueryParameter("ids", "STRING", current_video_ids)]
+        query_parameters=[
+            bigquery.ArrayQueryParameter("ids", "STRING", current_video_ids),
+            bigquery.ScalarQueryParameter("account_username", "STRING", account_username),
+        ]
     )
     result = client.query(query, job_config=job_config).result()
     if result.num_dml_affected_rows:

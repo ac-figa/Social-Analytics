@@ -23,6 +23,7 @@ def build_master_row(video: dict) -> dict:
 
     return {
         "Video_ID": video["id"],
+        "Account_Username": config.TIKTOK_USERNAME,
         "Title": video.get("title"),
         "Duration": video.get("duration"),
         "Publish_Date": publish_date,

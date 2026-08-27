@@ -85,7 +85,7 @@ def run() -> int:
 
     all_video_ids = [v["id"] for v in videos]
     bigquery_store.upsert_master_rows(bq_client, rows)
-    bigquery_store.mark_missing_as_deleted(bq_client, all_video_ids)
+    bigquery_store.mark_missing_as_deleted(bq_client, all_video_ids, config.TIKTOK_USERNAME)
 
     follower_count = None
     try:
