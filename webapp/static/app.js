@@ -3,7 +3,10 @@
   var partnershipContentTypes = dataEl ? JSON.parse(dataEl.textContent) : {};
 
   function updateContentTypes(partnershipInput) {
-    var row = partnershipInput.closest("form");
+    // "form" covers queue.html/browse.html's per-row forms; "tr" covers
+    // stories.html's table rows, whose inputs associate with an
+    // out-of-band <form form="..."> rather than a DOM-ancestor form.
+    var row = partnershipInput.closest("form, tr");
     if (!row) return;
     var contentTypeInput = row.querySelector(".content-type-input");
     if (!contentTypeInput) return;
@@ -19,11 +22,15 @@
     });
   }
 
-  document.querySelectorAll(".partnership-input").forEach(function (input) {
-    updateContentTypes(input);
-    input.addEventListener("input", function () {
-      updateContentTypes(input);
-    });
+  document.querySelectorAll(".partnership-input").forEach(updateContentTypes);
+
+  // Delegated (not per-element) so rows added dynamically after page
+  // load -- Stories' "+ Add Row" -- get this wiring for free, with no
+  // need to re-run setup every time a row is appended.
+  document.addEventListener("input", function (e) {
+    if (e.target.classList && e.target.classList.contains("partnership-input")) {
+      updateContentTypes(e.target);
+    }
   });
 })();
 

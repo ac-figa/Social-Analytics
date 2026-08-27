@@ -434,3 +434,57 @@ def get_media_kit(client: bigquery.Client, brand: str = None) -> dict:
             totals[f"Views_{days}d"] += a.get(f"Views_{days}d") or 0
 
     return {"accounts": accounts, "totals": totals, "brands": available_brands}
+
+
+_STORY_INT_FIELDS = {"Views", "Likes", "Shares", "Sticker_Taps", "Replies"}
+
+
+def _coerce_story_fields(raw: dict) -> dict:
+    """Normalizes a story row of form-submitted strings into BigQuery-
+    ready types: blank -> None (so an empty numeric field stores as NULL,
+    not an error), numeric fields -> int, everything else passed through
+    trimmed."""
+    result = {}
+    for key, value in raw.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        if value == "":
+            result[key] = None
+            continue
+        if key in _STORY_INT_FIELDS:
+            try:
+                result[key] = int(value)
+            except (TypeError, ValueError):
+                result[key] = None
+        else:
+            result[key] = value
+    return result
+
+
+def list_stories(client: bigquery.Client) -> list:
+    return content_store.list_stories(client)
+
+
+def add_stories(client: bigquery.Client, rows: list) -> int:
+    """rows: raw form-submitted dicts from the Stories tab's Submit All
+    button. Coerces types and registers any new Partnership/Content_Type
+    combination, same as classify_bulk()."""
+    clean_rows = [_coerce_story_fields(r) for r in rows]
+    count = content_store.bulk_create_stories(client, clean_rows)
+    for r in clean_rows:
+        if r.get("Partnership"):
+            add_content_type(client, r["Partnership"], r.get("Content_Type") or "Unclassified")
+    return count
+
+
+def update_story(client: bigquery.Client, story_id: str, fields: dict) -> None:
+    clean = _coerce_story_fields(fields)
+    content_store.update_story(client, story_id, clean)
+    if clean.get("Partnership"):
+        add_content_type(client, clean["Partnership"], clean.get("Content_Type") or "Unclassified")
+
+
+def delete_story(client: bigquery.Client, story_id: str) -> None:
+    content_store.delete_story(client, story_id)

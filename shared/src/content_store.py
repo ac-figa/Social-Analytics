@@ -127,6 +127,35 @@ ACCOUNT_STATS_SCHEMA = [
     bigquery.SchemaField("Captured_At", "TIMESTAMP"),
 ]
 
+# Stories (Instagram/Facebook/TikTok) aren't worth pulling from each
+# platform's API -- they expire in 24h and the volume posted under a
+# partnership is low -- so this is manual entry only, no pipeline writes
+# here. Field names deliberately mirror content_items' conventions
+# (Caption, Publish_Date, Views/Likes/Shares, Partnership, Content_Type)
+# rather than a bespoke naming scheme, so a story can be aggregated
+# alongside regular posts wherever that makes sense (e.g. the
+# partnership report). Sticker_Taps and Replies have no content_items
+# equivalent -- they're story-specific engagement types.
+STORIES_TABLE = "stories"
+
+STORIES_SCHEMA = [
+    bigquery.SchemaField("Story_ID", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Platform", "STRING"),
+    bigquery.SchemaField("Account_Username", "STRING"),
+    bigquery.SchemaField("Caption", "STRING"),
+    bigquery.SchemaField("Publish_Date", "DATE"),
+    bigquery.SchemaField("Views", "INT64"),
+    bigquery.SchemaField("Likes", "INT64"),
+    bigquery.SchemaField("Shares", "INT64"),
+    bigquery.SchemaField("Sticker_Taps", "INT64"),
+    bigquery.SchemaField("Replies", "INT64"),
+    bigquery.SchemaField("Tagged", "STRING"),
+    bigquery.SchemaField("Partnership", "STRING"),
+    bigquery.SchemaField("Content_Type", "STRING"),
+    bigquery.SchemaField("Created_At", "TIMESTAMP"),
+    bigquery.SchemaField("Updated_At", "TIMESTAMP"),
+]
+
 _CONTENT_ITEMS_UPDATE_COLUMNS = [f.name for f in CONTENT_ITEMS_SCHEMA if f.name != "Content_ID"]
 
 
@@ -157,6 +186,7 @@ def ensure_schema(client: bigquery.Client) -> None:
         (PARTNERSHIPS_TABLE, PARTNERSHIPS_SCHEMA),
         (PARTNERSHIP_CONTENT_TYPES_TABLE, PARTNERSHIP_CONTENT_TYPES_SCHEMA),
         (ACCOUNT_STATS_TABLE, ACCOUNT_STATS_SCHEMA),
+        (STORIES_TABLE, STORIES_SCHEMA),
     ):
         table_id = _table_ref(name)
         try:
@@ -1140,3 +1170,107 @@ def get_views_in_window(client: bigquery.Client, platform: str, account_username
         ).result()
     )
     return (rows[0]["Total_Views"] or 0) if rows else 0
+
+
+def list_stories(client: bigquery.Client, partnership: str = None) -> list:
+    """Every manually-entered story, newest first. partnership: optional
+    filter -- used by the partnership report page to fold story stats in
+    alongside regular posts."""
+    where = "WHERE Partnership = @partnership" if partnership else ""
+    query = f"""
+    SELECT Story_ID, Platform, Account_Username, Caption, Publish_Date,
+      Views, Likes, Shares, Sticker_Taps, Replies, Tagged, Partnership, Content_Type
+    FROM `{_table_ref(STORIES_TABLE)}`
+    {where}
+    ORDER BY Publish_Date DESC
+    """
+    job_config = None
+    if partnership:
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("partnership", "STRING", partnership)]
+        )
+    return [dict(r) for r in client.query(query, job_config=job_config).result()]
+
+
+def bulk_create_stories(client: bigquery.Client, rows: list) -> int:
+    """rows: [{"Platform":..., "Account_Username":..., "Caption":...,
+    "Publish_Date":..., "Views":..., "Likes":..., "Shares":...,
+    "Sticker_Taps":..., "Replies":..., "Tagged":..., "Partnership":...,
+    "Content_Type":...}] -- the Stories tab's "Submit All" button. One
+    staging-table load plus one INSERT...SELECT for the whole batch, same
+    reasoning as every other bulk write in this module. Returns how many
+    rows were inserted."""
+    if not rows:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    staging_rows = [
+        {
+            "Story_ID": str(uuid.uuid4()),
+            "Platform": r.get("Platform"),
+            "Account_Username": r.get("Account_Username"),
+            "Caption": r.get("Caption"),
+            "Publish_Date": r.get("Publish_Date"),
+            "Views": r.get("Views"),
+            "Likes": r.get("Likes"),
+            "Shares": r.get("Shares"),
+            "Sticker_Taps": r.get("Sticker_Taps"),
+            "Replies": r.get("Replies"),
+            "Tagged": r.get("Tagged"),
+            "Partnership": r.get("Partnership") or "Unclassified",
+            "Content_Type": r.get("Content_Type") or "Unclassified",
+            "Created_At": now,
+            "Updated_At": now,
+        }
+        for r in rows
+    ]
+
+    staging_id = _table_ref("stories_bulk_staging")
+    client.create_table(bigquery.Table(staging_id, schema=STORIES_SCHEMA), exists_ok=True)
+    client.load_table_from_json(
+        staging_rows, staging_id,
+        job_config=bigquery.LoadJobConfig(
+            schema=STORIES_SCHEMA, write_disposition="WRITE_TRUNCATE",
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        ),
+    ).result()
+    columns = ", ".join(f.name for f in STORIES_SCHEMA)
+    client.query(
+        f"INSERT INTO `{_table_ref(STORIES_TABLE)}` ({columns}) SELECT {columns} FROM `{staging_id}`"
+    ).result()
+    return len(staging_rows)
+
+
+_STORIES_EDITABLE_COLUMNS = {
+    "Platform": "STRING", "Account_Username": "STRING", "Caption": "STRING",
+    "Publish_Date": "DATE", "Views": "INT64", "Likes": "INT64", "Shares": "INT64",
+    "Sticker_Taps": "INT64", "Replies": "INT64", "Tagged": "STRING",
+    "Partnership": "STRING", "Content_Type": "STRING",
+}
+
+
+def update_story(client: bigquery.Client, story_id: str, fields: dict) -> None:
+    """fields: any subset of _STORIES_EDITABLE_COLUMNS' keys -- the
+    Stories tab's per-row Save when editing an existing story."""
+    set_clauses = [f"{col} = @{col}" for col in fields if col in _STORIES_EDITABLE_COLUMNS]
+    if not set_clauses:
+        return
+    params = [bigquery.ScalarQueryParameter("story_id", "STRING", story_id)]
+    for col, value in fields.items():
+        if col not in _STORIES_EDITABLE_COLUMNS:
+            continue
+        params.append(bigquery.ScalarQueryParameter(col, _STORIES_EDITABLE_COLUMNS[col], value))
+    query = f"""
+    UPDATE `{_table_ref(STORIES_TABLE)}`
+    SET {", ".join(set_clauses)}, Updated_At = CURRENT_TIMESTAMP()
+    WHERE Story_ID = @story_id
+    """
+    client.query(query, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
+
+
+def delete_story(client: bigquery.Client, story_id: str) -> None:
+    client.query(
+        f"DELETE FROM `{_table_ref(STORIES_TABLE)}` WHERE Story_ID = @story_id",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("story_id", "STRING", story_id)]
+        ),
+    ).result()

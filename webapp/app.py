@@ -251,6 +251,56 @@ def media_kit():
     )
 
 
+@app.route("/stories")
+def stories():
+    client = db.get_client()
+    partnerships = db.list_partnerships(client)
+    return render_template(
+        "stories.html",
+        stories=db.list_stories(client),
+        platforms=PLATFORMS,
+        partnerships=partnerships,
+        partnership_content_types={p["Partnership"]: p["Content_Types"] for p in partnerships},
+    )
+
+
+@app.route("/stories/add", methods=["POST"])
+def add_stories():
+    client = db.get_client()
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("rows", [])
+    # Skip fully-blank rows -- "+ Add Row" starts empty, and not every
+    # added row necessarily gets filled in before Submit All.
+    rows = [r for r in rows if any((r.get(k) or "").strip() for k in ("Caption", "Views", "Platform"))]
+    added = db.add_stories(client, rows) if rows else 0
+    return jsonify({"added": added})
+
+
+@app.route("/stories/update", methods=["POST"])
+def update_story():
+    client = db.get_client()
+    story_id = request.form.get("story_id")
+    fields = {
+        col: request.form.get(col)
+        for col in (
+            "Platform", "Account_Username", "Caption", "Publish_Date", "Views", "Likes",
+            "Shares", "Sticker_Taps", "Replies", "Tagged", "Partnership", "Content_Type",
+        )
+    }
+    if story_id:
+        db.update_story(client, story_id, fields)
+    return redirect(url_for("stories"))
+
+
+@app.route("/stories/delete", methods=["POST"])
+def delete_story():
+    client = db.get_client()
+    story_id = request.form.get("story_id")
+    if story_id:
+        db.delete_story(client, story_id)
+    return redirect(url_for("stories"))
+
+
 @app.route("/sync")
 def sync_page():
     return render_template("sync.html", status=sync.get_status(), sync_available=config.SYNC_AVAILABLE)

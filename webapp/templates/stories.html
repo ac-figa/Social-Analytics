@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Stories{% endblock %}
+{% block content %}
+  <h1>Stories</h1>
+  <p class="subtitle">Instagram/Facebook/TikTok Stories aren't worth pulling from each platform's API (24h lifespan, low volume) -- add them here by hand instead.</p>
+
+  <h2 class="section-title">Add New Stories</h2>
+  <div class="stories-table-wrap">
+    <table class="stories-table">
+      <thead>
+        <tr>
+          <th>Platform</th>
+          <th>Account</th>
+          <th>Caption</th>
+          <th>Date</th>
+          <th>Views</th>
+          <th>Likes</th>
+          <th>Shares</th>
+          <th>Sticker Taps</th>
+          <th>Replies</th>
+          <th>Tagged</th>
+          <th>Partnership</th>
+          <th>Content Type</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="new-story-rows"></tbody>
+    </table>
+  </div>
+  <div class="stories-add-bar">
+    <button type="button" id="add-story-row-btn">+ Add Row</button>
+    <button type="button" id="submit-stories-btn" data-action="{{ url_for('add_stories') }}">Submit All</button>
+    <span id="submit-stories-status" class="meta"></span>
+  </div>
+
+  <template id="story-row-template">
+    <tr class="new-story-row">
+      <td>
+        <select class="ns-field" data-field="Platform">
+          {% for p in platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </td>
+      <td><input class="ns-field" data-field="Account_Username" placeholder="Account"></td>
+      <td><input class="ns-field" data-field="Caption" placeholder="Caption"></td>
+      <td><input type="date" class="ns-field" data-field="Publish_Date"></td>
+      <td><input type="number" class="ns-field ns-number" data-field="Views"></td>
+      <td><input type="number" class="ns-field ns-number" data-field="Likes"></td>
+      <td><input type="number" class="ns-field ns-number" data-field="Shares"></td>
+      <td><input type="number" class="ns-field ns-number" data-field="Sticker_Taps"></td>
+      <td><input type="number" class="ns-field ns-number" data-field="Replies"></td>
+      <td><input class="ns-field" data-field="Tagged" placeholder="@handle, @handle"></td>
+      <td><input class="ns-field partnership-input" data-field="Partnership" list="partnerships-datalist" placeholder="Partnership"></td>
+      <td>
+        <input class="ns-field content-type-input" data-field="Content_Type" placeholder="Content Type">
+        <datalist class="ns-content-type-datalist"></datalist>
+      </td>
+      <td><button type="button" class="remove-row-btn" title="Remove row">&times;</button></td>
+    </tr>
+  </template>
+
+  <h2 class="section-title">Existing Stories</h2>
+  {% if not stories %}
+    <p class="empty">No stories added yet.</p>
+  {% else %}
+    {% for s in stories %}
+      <form id="story-form-{{ loop.index }}" method="post" action="{{ url_for('update_story') }}" class="hidden-story-form">
+        <input type="hidden" name="story_id" value="{{ s.Story_ID }}">
+      </form>
+      <form id="story-delete-{{ loop.index }}" method="post" action="{{ url_for('delete_story') }}" class="hidden-story-form" onsubmit="return confirm('Delete this story?');">
+        <input type="hidden" name="story_id" value="{{ s.Story_ID }}">
+      </form>
+    {% endfor %}
+    <div class="stories-table-wrap">
+      <table class="stories-table">
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Account</th>
+            <th>Caption</th>
+            <th>Date</th>
+            <th>Views</th>
+            <th>Likes</th>
+            <th>Shares</th>
+            <th>Sticker Taps</th>
+            <th>Replies</th>
+            <th>Tagged</th>
+            <th>Partnership</th>
+            <th>Content Type</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in stories %}
+            <tr>
+              <td>
+                <select form="story-form-{{ loop.index }}" name="Platform">
+                  {% for p in platforms %}<option value="{{ p }}" {{ 'selected' if p == s.Platform else '' }}>{{ p }}</option>{% endfor %}
+                </select>
+              </td>
+              <td><input form="story-form-{{ loop.index }}" name="Account_Username" value="{{ s.Account_Username or '' }}"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Caption" value="{{ s.Caption or '' }}" class="stories-caption-input"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Publish_Date" type="date" value="{{ s.Publish_Date.isoformat() if s.Publish_Date else '' }}"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Views" type="number" value="{{ s.Views if s.Views is not none else '' }}" class="ns-number"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Likes" type="number" value="{{ s.Likes if s.Likes is not none else '' }}" class="ns-number"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Shares" type="number" value="{{ s.Shares if s.Shares is not none else '' }}" class="ns-number"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Sticker_Taps" type="number" value="{{ s.Sticker_Taps if s.Sticker_Taps is not none else '' }}" class="ns-number"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Replies" type="number" value="{{ s.Replies if s.Replies is not none else '' }}" class="ns-number"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Tagged" value="{{ s.Tagged or '' }}"></td>
+              <td><input form="story-form-{{ loop.index }}" name="Partnership" value="{{ s.Partnership if s.Partnership and s.Partnership != 'Unclassified' else '' }}" list="partnerships-datalist" class="partnership-input"></td>
+              <td>
+                <input form="story-form-{{ loop.index }}" name="Content_Type" value="{{ s.Content_Type if s.Content_Type and s.Content_Type != 'Unclassified' else '' }}" list="story-content-types-{{ loop.index }}" class="content-type-input">
+                <datalist id="story-content-types-{{ loop.index }}"></datalist>
+              </td>
+              <td class="stories-row-actions">
+                <button type="submit" form="story-form-{{ loop.index }}">Save</button>
+                <button type="submit" form="story-delete-{{ loop.index }}" class="delete-btn">Delete</button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <datalist id="partnerships-datalist">
+    {% for p in partnerships %}<option value="{{ p.Partnership }}">{% endfor %}
+  </datalist>
+
+  <script id="partnerships-data" type="application/json">
+    {{ partnership_content_types|tojson }}
+  </script>
+  <script src="{{ url_for('static', filename='stories.js') }}"></script>
+{% endblock %}
