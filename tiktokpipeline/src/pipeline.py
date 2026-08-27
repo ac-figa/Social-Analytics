@@ -17,7 +17,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import bigquery_store, suggestions, transform
+from . import bigquery_store, config, suggestions, transform
 from .tiktok_client import TikTokAPIError, TikTokClient, TokenExpiredError
 
 # See instagramanalyticspipeline/src/pipeline.py for why this path math:
@@ -86,7 +86,19 @@ def run() -> int:
     all_video_ids = [v["id"] for v in videos]
     bigquery_store.upsert_master_rows(bq_client, rows)
     bigquery_store.mark_missing_as_deleted(bq_client, all_video_ids)
-    _sync_to_shared_content_layer(rows)
+
+    follower_count = None
+    try:
+        follower_count = client.get_user_info().get("follower_count")
+    except TikTokAPIError as e:
+        log.warning(
+            "Could not fetch follower count (code=%s): %s -- likely needs the "
+            "user.info.stats scope added via a fresh OAuth login, see docs/SETUP.md. "
+            "Continuing without it.",
+            e.code, e,
+        )
+
+    _sync_to_shared_content_layer(rows, follower_count)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()
     history_rows = [transform.build_history_row(r, snapshot_date) for r in rows]
@@ -104,10 +116,12 @@ def run() -> int:
     return 0
 
 
-def _sync_to_shared_content_layer(rows: list) -> None:
+def _sync_to_shared_content_layer(rows: list, follower_count) -> None:
     """See instagramanalyticspipeline/src/pipeline.py's twin of this
     function for the full rationale -- best-effort, never fails this
-    pipeline's own successful TikTok ingestion."""
+    pipeline's own successful TikTok ingestion. Also records today's
+    follower-count snapshot for the media kit (follower_count is None
+    if get_user_info() couldn't be called -- see run()'s call site)."""
     try:
         from shared.src import content_store, run_matching
     except ImportError:
@@ -126,6 +140,10 @@ def _sync_to_shared_content_layer(rows: list) -> None:
             "Cross-platform sync: %d new group(s), %d item(s) added to existing groups.",
             stats["created"] + stats["pending"],
             stats["added_existing"] + stats["pending_existing"],
+        )
+
+        content_store.record_account_stat(
+            shared_client, "TikTok", config.TIKTOK_USERNAME, None, follower_count,
         )
     except Exception as e:  # noqa: BLE001 -- shared-layer issues must not fail this pipeline
         log.warning("Cross-platform content sync failed (non-fatal): %s", e)

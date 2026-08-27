@@ -130,6 +130,30 @@ class TikTokClient:
             time.sleep(backoff)
         raise TikTokAPIError(f"Exhausted retries for POST {endpoint}")
 
+    def get_user_info(self) -> dict:
+        """Requires the user.info.stats scope (in addition to the
+        user.info.basic/video.list scopes this pipeline already runs
+        with) -- if the token wasn't authorized for it, this raises
+        TikTokAPIError with code 'scope_not_authorized', same as the
+        existing 'username' field troubleshooting note in docs/SETUP.md.
+        Re-authorizing means visiting the OAuth URL again with
+        user.info.stats added to scope= and replacing TIKTOK_REFRESH_TOKEN."""
+        if not self.access_token:
+            raise TikTokAPIError("Call authenticate() before making API requests.")
+        resp = self.session.get(
+            f"{BASE_URL}/user/info/",
+            params={"fields": "follower_count"},
+            headers={"Authorization": f"Bearer {self.access_token}"},
+            timeout=30,
+        )
+        payload = _safe_json(resp)
+        error = payload.get("error") if isinstance(payload, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        if not resp.ok or code not in (None, "ok"):
+            message = error.get("message", f"HTTP {resp.status_code}") if isinstance(error, dict) else f"HTTP {resp.status_code}"
+            raise TikTokAPIError(message, code=code)
+        return payload.get("data", {}).get("user", {})
+
     def get_all_videos(self):
         """Yields raw video dicts (id, title, create_time, duration,
         view_count, like_count, comment_count, share_count) for every

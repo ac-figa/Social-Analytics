@@ -89,17 +89,21 @@ class YouTubeClient:
 
     def get_channel_info(self) -> dict:
         payload = self._get(
-            "channels", {"part": "snippet,contentDetails", "id": self.channel_id}
+            "channels", {"part": "snippet,contentDetails,statistics", "id": self.channel_id}
         )
         items = payload.get("items", [])
         if not items:
             raise YouTubeAPIError(f"Channel not found or not accessible: {self.channel_id}")
         channel = items[0]
         self._uploads_playlist_id = channel["contentDetails"]["relatedPlaylists"]["uploads"]
+        stats = channel.get("statistics", {})
         return {
             "id": channel["id"],
             "title": channel["snippet"]["title"],
             "uploads_playlist_id": self._uploads_playlist_id,
+            # hiddenSubscriberCount is True for a channel that's chosen to
+            # hide this -- subscriberCount is then absent, not zero.
+            "subscriber_count": int(stats["subscriberCount"]) if "subscriberCount" in stats else None,
         }
 
     def get_all_video_ids(self):

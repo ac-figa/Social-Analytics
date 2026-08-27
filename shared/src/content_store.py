@@ -111,6 +111,22 @@ PARTNERSHIP_CONTENT_TYPES_SCHEMA = [
     bigquery.SchemaField("Created_At", "TIMESTAMP"),
 ]
 
+# Daily follower/subscriber snapshots for the media kit -- one row per
+# account per day, so "latest" is just the newest Snapshot_Date and
+# growth-over-time comes for free. Lives in the shared layer (rather than
+# each pipeline's own dataset) because every platform's shape here is
+# identical, unlike each pipeline's platform-specific master schema.
+ACCOUNT_STATS_TABLE = "account_stats"
+
+ACCOUNT_STATS_SCHEMA = [
+    bigquery.SchemaField("Platform", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Account_Username", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Account_ID", "STRING"),
+    bigquery.SchemaField("Followers", "INT64"),
+    bigquery.SchemaField("Snapshot_Date", "DATE", mode="REQUIRED"),
+    bigquery.SchemaField("Captured_At", "TIMESTAMP"),
+]
+
 _CONTENT_ITEMS_UPDATE_COLUMNS = [f.name for f in CONTENT_ITEMS_SCHEMA if f.name != "Content_ID"]
 
 
@@ -140,6 +156,7 @@ def ensure_schema(client: bigquery.Client) -> None:
         (CONTENT_GROUP_MEMBERS_TABLE, CONTENT_GROUP_MEMBERS_SCHEMA),
         (PARTNERSHIPS_TABLE, PARTNERSHIPS_SCHEMA),
         (PARTNERSHIP_CONTENT_TYPES_TABLE, PARTNERSHIP_CONTENT_TYPES_SCHEMA),
+        (ACCOUNT_STATS_TABLE, ACCOUNT_STATS_SCHEMA),
     ):
         table_id = _table_ref(name)
         try:
@@ -1049,3 +1066,77 @@ def get_partner_report(client: bigquery.Client, partnership: str) -> list:
         ),
     ).result()
     return [dict(r) for r in rows]
+
+
+def record_account_stat(
+    client: bigquery.Client, platform: str, account_username: str, account_id, followers
+) -> None:
+    """Upserts today's follower/subscriber snapshot for one account --
+    MERGE keyed on (Platform, Account_Username, Snapshot_Date) so running
+    a pipeline more than once in a day updates today's number in place
+    instead of piling up duplicate rows, while every prior day's snapshot
+    stays untouched -- that history is what makes a followers-over-time
+    trend possible later, not just a single "latest" number. Called from
+    each pipeline's own run(), right where it already has a freshly
+    authenticated client and just fetched account/channel/page info."""
+    now = datetime.now(timezone.utc)
+    query = f"""
+    MERGE `{_table_ref(ACCOUNT_STATS_TABLE)}` T
+    USING (SELECT @platform AS Platform, @account_username AS Account_Username, @snapshot_date AS Snapshot_Date) S
+    ON T.Platform = S.Platform AND T.Account_Username = S.Account_Username AND T.Snapshot_Date = S.Snapshot_Date
+    WHEN MATCHED THEN UPDATE SET T.Followers = @followers, T.Account_ID = @account_id, T.Captured_At = @captured_at
+    WHEN NOT MATCHED THEN
+      INSERT (Platform, Account_Username, Account_ID, Followers, Snapshot_Date, Captured_At)
+      VALUES (@platform, @account_username, @account_id, @followers, @snapshot_date, @captured_at)
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("platform", "STRING", platform),
+                bigquery.ScalarQueryParameter("account_username", "STRING", account_username),
+                bigquery.ScalarQueryParameter("account_id", "STRING", account_id),
+                bigquery.ScalarQueryParameter("followers", "INT64", followers),
+                bigquery.ScalarQueryParameter("snapshot_date", "DATE", now.date().isoformat()),
+                bigquery.ScalarQueryParameter("captured_at", "TIMESTAMP", now.isoformat()),
+            ]
+        ),
+    ).result()
+
+
+def get_latest_account_stats(client: bigquery.Client) -> list:
+    """The most recent Followers snapshot per (Platform, Account_Username)
+    -- the media kit's headline follower/subscriber numbers."""
+    query = f"""
+    SELECT Platform, Account_Username, Account_ID, Followers, Snapshot_Date
+    FROM `{_table_ref(ACCOUNT_STATS_TABLE)}`
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY Platform, Account_Username ORDER BY Snapshot_Date DESC) = 1
+    ORDER BY Platform, Account_Username
+    """
+    return [dict(r) for r in client.query(query).result()]
+
+
+def get_views_in_window(client: bigquery.Client, platform: str, account_username: str, days: int) -> int:
+    """SUM(Views) across every content_item that account published in the
+    last `days` days. Computed live from content_items rather than
+    stored/snapshotted -- cheap to compute on demand (one indexed range
+    scan) and never goes stale the way a cached number would."""
+    query = f"""
+    SELECT SUM(Views) AS Total_Views
+    FROM `{_table_ref(CONTENT_ITEMS_TABLE)}`
+    WHERE Platform = @platform AND Account_Username = @account_username
+      AND Publish_Date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
+    """
+    rows = list(
+        client.query(
+            query,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("platform", "STRING", platform),
+                    bigquery.ScalarQueryParameter("account_username", "STRING", account_username),
+                    bigquery.ScalarQueryParameter("days", "INT64", days),
+                ]
+            ),
+        ).result()
+    )
+    return (rows[0]["Total_Views"] or 0) if rows else 0

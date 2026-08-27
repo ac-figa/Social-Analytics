@@ -112,7 +112,7 @@ def run(full_refresh: bool = False) -> int:
     # Uses every video still listed (all_video_ids), not just the ones
     # refreshed this run -- see the Instagram pipeline's twin comment.
     bigquery_store.mark_missing_as_deleted(bq_client, all_video_ids)
-    _sync_to_shared_content_layer(rows)
+    _sync_to_shared_content_layer(rows, channel_info)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()
     history_rows = [transform.build_history_row(r, snapshot_date) for r in rows]
@@ -131,10 +131,11 @@ def run(full_refresh: bool = False) -> int:
     return 0
 
 
-def _sync_to_shared_content_layer(rows: list) -> None:
+def _sync_to_shared_content_layer(rows: list, channel_info: dict) -> None:
     """See instagramanalyticspipeline/src/pipeline.py's twin of this
     function for the full rationale -- best-effort, never fails this
-    pipeline's own successful YouTube ingestion."""
+    pipeline's own successful YouTube ingestion. Also records today's
+    subscriber-count snapshot for the media kit."""
     try:
         from shared.src import content_store, run_matching
     except ImportError:
@@ -153,6 +154,11 @@ def _sync_to_shared_content_layer(rows: list) -> None:
             "Cross-platform sync: %d new group(s), %d item(s) added to existing groups.",
             stats["created"] + stats["pending"],
             stats["added_existing"] + stats["pending_existing"],
+        )
+
+        content_store.record_account_stat(
+            shared_client, "YouTube", channel_info.get("title"),
+            channel_info.get("id"), channel_info.get("subscriber_count"),
         )
     except Exception as e:  # noqa: BLE001 -- shared-layer issues must not fail this pipeline
         log.warning("Cross-platform content sync failed (non-fatal): %s", e)

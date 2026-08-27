@@ -153,7 +153,7 @@ class FacebookGraphClient:
         returns empty results (not an error) for /videos on some accounts,
         which is why this exchange isn't optional. Piggybacked onto this
         call's existing fields param rather than a separate request."""
-        payload = self._get(self.page_id, {"fields": "id,name,username,access_token"})
+        payload = self._get(self.page_id, {"fields": "id,name,username,access_token,followers_count"})
         page_token = payload.get("access_token")
         if page_token:
             self.access_token = page_token

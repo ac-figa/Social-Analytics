@@ -146,7 +146,7 @@ class InstagramGraphClient:
         raise GraphAPIError("Exhausted retries for batch request")
 
     def get_account_info(self) -> dict:
-        return self._get(self.ig_user_id, {"fields": "id,username,name"})
+        return self._get(self.ig_user_id, {"fields": "id,username,name,followers_count"})
 
     # ---------------------------------------------------------------- #
     # Media listing
