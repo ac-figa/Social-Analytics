@@ -7,6 +7,27 @@
   {% if not accounts %}
     <p class="empty">No account stats yet -- run a sync on each pipeline to capture the first snapshot.</p>
   {% else %}
+    <h2 class="section-title">All Platforms Combined</h2>
+    <div class="stat-tiles">
+      <div class="stat-tile">
+        <span class="stat-value">{{ '{:,}'.format(totals.Followers) }}</span>
+        <span class="stat-label">Total Followers</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value">{{ '{:,}'.format(totals.Views_30d) }}</span>
+        <span class="stat-label">Views (30d)</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value">{{ '{:,}'.format(totals.Views_90d) }}</span>
+        <span class="stat-label">Views (90d)</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value">{{ '{:,}'.format(totals.Views_270d) }}</span>
+        <span class="stat-label">Views (270d)</span>
+      </div>
+    </div>
+
+    <h2 class="section-title">By Account</h2>
     <div class="media-kit-grid">
       {% for a in accounts %}
         <div class="media-kit-card">

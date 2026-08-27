@@ -216,8 +216,9 @@ button:disabled { background: var(--muted); cursor: default; }
 
 .media-kit-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
+  margin-bottom: 24px;
 }
 .media-kit-card {
   background: var(--card);
@@ -230,8 +231,15 @@ button:disabled { background: var(--muted); cursor: default; }
 .media-kit-followers { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
 .media-kit-followers .stat-value { font-size: 28px; }
 .media-kit-views { margin-bottom: 10px; }
-.media-kit-views .stat-tile { flex: 1; min-width: 0; padding: 10px 12px; }
-.media-kit-views .stat-value { font-size: 16px; }
+.media-kit-views .stat-tile {
+  min-width: 118px;
+  padding: 10px 10px;
+}
+.media-kit-views .stat-value {
+  font-size: 14px;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
 .media-kit-updated { margin: 0; font-size: 11px; color: var(--muted); }
 
 .partnership-video-row { align-items: flex-start; }

@@ -388,14 +388,17 @@ def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
     }
 
 
-def get_media_kit(client: bigquery.Client) -> list:
-    """One card per account for the Media Kit page: latest follower/
+def get_media_kit(client: bigquery.Client) -> dict:
+    """Media Kit page data: one card per account with latest follower/
     subscriber count (from the daily account_stats snapshots) plus Views
     in the last 30/90/270 days (computed live from content_items -- see
     content_store.get_views_in_window()'s docstring for why that's not
-    stored). Views window days are hardcoded here rather than made
-    configurable -- exactly what a media kit for brands conventionally
-    reports, no reason to expose more knobs than that."""
+    stored), and an aggregate total across every account -- every
+    Instagram account (Bello Bros + Calcio Bros) and every platform
+    summed together, the one number a brand pitch opens with. Views
+    window days are hardcoded here rather than made configurable --
+    exactly what a media kit for brands conventionally reports, no
+    reason to expose more knobs than that."""
     accounts = content_store.get_latest_account_stats(client)
     windows = (30, 90, 270)
     for a in accounts:
@@ -403,4 +406,11 @@ def get_media_kit(client: bigquery.Client) -> list:
             a[f"Views_{days}d"] = content_store.get_views_in_window(
                 client, a["Platform"], a["Account_Username"], days
             )
-    return accounts
+
+    totals = {"Followers": 0, "Views_30d": 0, "Views_90d": 0, "Views_270d": 0}
+    for a in accounts:
+        totals["Followers"] += a.get("Followers") or 0
+        for days in windows:
+            totals[f"Views_{days}d"] += a.get(f"Views_{days}d") or 0
+
+    return {"accounts": accounts, "totals": totals}

@@ -240,8 +240,10 @@ def reject_pending():
 @app.route("/media-kit")
 def media_kit():
     client = db.get_client()
-    accounts = db.get_media_kit(client)
-    return render_template("media_kit.html", accounts=accounts)
+    media_kit_data = db.get_media_kit(client)
+    return render_template(
+        "media_kit.html", accounts=media_kit_data["accounts"], totals=media_kit_data["totals"],
+    )
 
 
 @app.route("/sync")
