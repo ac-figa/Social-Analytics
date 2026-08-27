@@ -237,6 +237,13 @@ def reject_pending():
     return redirect(url_for("pending"))
 
 
+@app.route("/media-kit")
+def media_kit():
+    client = db.get_client()
+    accounts = db.get_media_kit(client)
+    return render_template("media_kit.html", accounts=accounts)
+
+
 @app.route("/sync")
 def sync_page():
     return render_template("sync.html", status=sync.get_status(), sync_available=config.SYNC_AVAILABLE)

@@ -386,3 +386,21 @@ def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
         "content_type_breakdown": sorted(content_type_counts.items(), key=lambda kv: -kv[1]),
         "platform_breakdown": sorted(platform_stats.items(), key=lambda kv: kv[0]),
     }
+
+
+def get_media_kit(client: bigquery.Client) -> list:
+    """One card per account for the Media Kit page: latest follower/
+    subscriber count (from the daily account_stats snapshots) plus Views
+    in the last 30/90/270 days (computed live from content_items -- see
+    content_store.get_views_in_window()'s docstring for why that's not
+    stored). Views window days are hardcoded here rather than made
+    configurable -- exactly what a media kit for brands conventionally
+    reports, no reason to expose more knobs than that."""
+    accounts = content_store.get_latest_account_stats(client)
+    windows = (30, 90, 270)
+    for a in accounts:
+        for days in windows:
+            a[f"Views_{days}d"] = content_store.get_views_in_window(
+                client, a["Platform"], a["Account_Username"], days
+            )
+    return accounts
