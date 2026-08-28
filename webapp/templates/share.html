@@ -279,13 +279,13 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--ink);
-    text-decoration: none;
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .piece-caption:hover { color: var(--accent-deep); }
+  a.badge { text-decoration: none; cursor: pointer; }
+  a.badge:hover { opacity: 0.85; }
   .piece-type {
     font-size: 11.5px;
     color: var(--muted);
@@ -394,12 +394,16 @@
               <div class="piece" data-type="{{ g.Content_Type or 'Unclassified' }}">
                 <div class="piece-platform">
                   {% for m in g.Members %}
-                    <span class="badge badge-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+                    {% if m.Permalink %}
+                      <a class="badge badge-{{ m.Platform|lower }}" href="{{ m.Permalink }}" target="_blank" rel="noopener">{{ m.Platform }}</a>
+                    {% else %}
+                      <span class="badge badge-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+                    {% endif %}
                   {% endfor %}
                   <span class="badge-date">{{ g.Publish_Date.strftime('%b %d') if g.Publish_Date else '' }}</span>
                 </div>
                 <div class="piece-body">
-                  <a class="piece-caption" href="{{ g.Members[0].Permalink }}" target="_blank" rel="noopener">{{ (g.Members[0].Caption or '(no caption)') }}</a>
+                  <span class="piece-caption">{{ (g.Members[0].Caption or '(no caption)') }}</span>
                   <div class="piece-type">{{ g.Content_Type or 'Unclassified' }}</div>
                 </div>
                 <div class="piece-stats">
