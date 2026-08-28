@@ -22,6 +22,7 @@ app.secret_key = config.FLASK_SECRET_KEY
 # the OAuth redirect_uri, and for any generated absolute URL). No-op when
 # running locally with no proxy in front.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.jinja_env.filters["compact"] = db.compact_number
 
 # Auth is only enforced when GOOGLE_CLIENT_ID is actually configured --
 # running locally (webapp/README.md's setup) never sets it, so local dev

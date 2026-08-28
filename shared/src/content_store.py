@@ -1001,7 +1001,8 @@ def get_partnership_groups(client: bigquery.Client, partnership: str) -> list:
       ) AS Members,
       MIN(ci.Publish_Date) AS Publish_Date,
       SUM(ci.Views) AS Views, SUM(ci.Likes) AS Likes,
-      SUM(ci.Comments) AS Comments, SUM(ci.Shares) AS Shares
+      SUM(ci.Comments) AS Comments, SUM(ci.Shares) AS Shares,
+      MAX(ci.Last_Synced_At) AS Last_Synced_At
     FROM `{_table_ref(CONTENT_GROUPS_TABLE)}` g
     JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m ON g.Group_ID = m.Group_ID AND m.Confirmed = TRUE
     JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
@@ -1233,7 +1234,7 @@ def list_stories(client: bigquery.Client, partnership: str = None) -> list:
     where = "WHERE Partnership = @partnership" if partnership else ""
     query = f"""
     SELECT Story_ID, Platform, Account_Username, Caption, Publish_Date,
-      Views, Likes, Shares, Sticker_Taps, Replies, Tagged, Partnership, Content_Type
+      Views, Likes, Shares, Sticker_Taps, Replies, Tagged, Partnership, Content_Type, Updated_At
     FROM `{_table_ref(STORIES_TABLE)}`
     {where}
     ORDER BY Publish_Date DESC

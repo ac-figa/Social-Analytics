@@ -9,6 +9,7 @@ pipeline's own reporting surface) reflect it too, not just content_groups.
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -17,6 +18,40 @@ if str(_REPO_ROOT) not in sys.path:
 from google.cloud import bigquery  # noqa: E402
 
 from shared.src import content_store  # noqa: E402
+
+_REPORT_TZ = ZoneInfo("America/Toronto")
+
+
+def format_last_updated(dt: datetime) -> str:
+    """Formats a report's most-recent Last_Synced_At/Updated_At timestamp
+    for the "Stats last updated" chip on the partnership report pages, in
+    the brand's home timezone (Toronto) rather than raw UTC since that's
+    what a human reading the page expects."""
+    if dt is None:
+        return "No data synced yet"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local = dt.astimezone(_REPORT_TZ)
+    return local.strftime("%b %-d, %Y · %-I:%M %p %Z")
+
+
+def compact_number(n) -> str:
+    """Formats a number the way a stat card headline reads it -- 1,860,000
+    as "1.86M", 184,000 as "184K", 612 stays "612". Used for the big
+    partnership-report stat cards; the per-line breakdowns still use full
+    comma-formatted numbers."""
+    if n is None:
+        return "0"
+    n = int(n)
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+    if n >= 1_000_000:
+        value = f"{n / 1_000_000:.2f}".rstrip("0").rstrip(".")
+        return f"{sign}{value}M"
+    if n >= 1_000:
+        value = f"{n / 1_000:.1f}".rstrip("0").rstrip(".")
+        return f"{sign}{value}K"
+    return f"{sign}{n}"
 
 from . import config  # noqa: E402
 
@@ -368,20 +403,27 @@ def add_content_type(client: bigquery.Client, partnership: str, content_type: st
 
 def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
     """Shapes content_store.get_partnership_groups() into what the
-    per-partnership dashboard page needs: overall totals, a breakdown by
+    per-partnership dashboard pages (internal partnership_detail.html and
+    the public share.html) need: overall totals, a breakdown by
     Content_Type, and a breakdown by Platform (each group can carry stats
-    for more than one platform), on top of the raw per-video list. Stories
-    classified under this partnership are folded into the same Views/
-    Likes/Shares totals (they're the same kind of engagement, just from a
-    different content type) -- Comments has no story equivalent so it
-    stays video-only, and Sticker_Taps/Replies are story-only additions
-    with no video equivalent."""
+    for more than one platform), on top of the raw per-video and per-story
+    lists. Stories classified under this partnership are folded into the
+    same Views/Likes/Shares totals (they're the same kind of engagement,
+    just from a different content type) -- Comments has no story
+    equivalent so it stays video-only, and Sticker_Taps/Replies are
+    story-only additions with no video equivalent. total_posted and
+    total_engagement are the combined "3 big boxes" numbers the report
+    pages headline with; last_updated/last_updated_display is the most
+    recent of any group member's Last_Synced_At or any story's
+    Updated_At, so the page can show partners when the numbers were last
+    refreshed."""
     groups = content_store.get_partnership_groups(client, partnership)
     stories = content_store.list_stories(client, partnership=partnership)
 
     totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0, "Sticker_Taps": 0, "Replies": 0}
     content_type_counts: dict = {}
     platform_stats: dict = {}
+    last_updated = None
 
     for g in groups:
         for key in ("Views", "Likes", "Comments", "Shares"):
@@ -392,18 +434,27 @@ def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
             stats["count"] += 1
             for key in ("Views", "Likes", "Comments", "Shares"):
                 stats[key] += m.get(key) or 0
+        if g.get("Last_Synced_At") and (last_updated is None or g["Last_Synced_At"] > last_updated):
+            last_updated = g["Last_Synced_At"]
 
     for s in stories:
         for key in ("Views", "Likes", "Shares", "Sticker_Taps", "Replies"):
             totals[key] += s.get(key) or 0
+        if s.get("Updated_At") and (last_updated is None or s["Updated_At"] > last_updated):
+            last_updated = s["Updated_At"]
 
     return {
         "groups": groups,
+        "stories": stories,
         "total_videos": len(groups),
         "total_stories": len(stories),
+        "total_posted": len(groups) + len(stories),
+        "total_engagement": totals["Likes"] + totals["Comments"] + totals["Shares"],
         "totals": totals,
         "content_type_breakdown": sorted(content_type_counts.items(), key=lambda kv: -kv[1]),
         "platform_breakdown": sorted(platform_stats.items(), key=lambda kv: kv[0]),
+        "last_updated": last_updated,
+        "last_updated_display": format_last_updated(last_updated),
     }
 
 
