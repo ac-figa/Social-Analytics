@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ partnership }} — The Bello Bros</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f7f4ec;
+    --surface: #ffffff;
+    --ink: #14140f;
+    --ink-soft: #423f36;
+    --muted: #8b8574;
+    --line: #e6e1d3;
+    --line-strong: #d3ccb8;
+    --accent: #1f4fd6;
+    --accent-deep: #13328f;
+    --accent-tint: #eaf0ff;
+    --good: #2f7d5a;
+    --focus: #14140f;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14140f;
+      --surface: #1f1e18;
+      --ink: #f4f2ea;
+      --ink-soft: #cdc8ba;
+      --muted: #948e7c;
+      --line: #34322a;
+      --line-strong: #454236;
+      --accent: #5b84ff;
+      --accent-deep: #8aa6ff;
+      --accent-tint: #1c2440;
+      --good: #6bc79a;
+      --focus: #f4f2ea;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14140f;
+    --surface: #1f1e18;
+    --ink: #f4f2ea;
+    --ink-soft: #cdc8ba;
+    --muted: #948e7c;
+    --line: #34322a;
+    --line-strong: #454236;
+    --accent: #5b84ff;
+    --accent-deep: #8aa6ff;
+    --accent-tint: #1c2440;
+    --good: #6bc79a;
+    --focus: #f4f2ea;
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Poppins", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 28px 96px;
+  }
+
+  /* ---------- header ---------- */
+
+  .masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .wordmark {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .wordmark b { color: var(--ink); font-weight: 800; }
+
+  .updated-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .updated-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--good);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 18%, transparent);
+    flex-shrink: 0;
+  }
+  .updated-chip strong { color: var(--ink-soft); font-weight: 600; }
+
+  h1.title {
+    font-family: "Anton", "Poppins", sans-serif;
+    font-weight: 400;
+    text-transform: uppercase;
+    font-size: clamp(40px, 7vw, 62px);
+    line-height: 0.94;
+    letter-spacing: 0.002em;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+
+  .empty {
+    font-size: 15px;
+    color: var(--muted);
+  }
+
+  /* ---------- big stats ---------- */
+
+  .headline-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 36px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 20px 18px;
+  }
+  .stat-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .stat-number {
+    font-family: "Anton", "Poppins", sans-serif;
+    font-weight: 400;
+    font-size: clamp(32px, 4.6vw, 42px);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.005em;
+    margin: 0 0 10px;
+    padding-bottom: 12px;
+    border-bottom: 3px solid var(--accent);
+    display: inline-block;
+  }
+  .stat-breakdown {
+    font-size: 12.5px;
+    color: var(--muted);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .stat-breakdown b { color: var(--ink-soft); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---------- content sections ---------- */
+
+  .section {
+    margin-bottom: 40px;
+  }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .section-title {
+    font-family: "Anton", "Poppins", sans-serif;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    font-size: 24px;
+    margin: 0;
+  }
+  .section-count {
+    font-size: 12.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .type-filter {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .type-chip {
+    appearance: none;
+    border: 1.5px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--ink-soft);
+    font-family: "Poppins", sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .type-chip:hover { border-color: var(--accent); }
+  .type-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .type-chip[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .type-chip .n { color: var(--muted); margin-left: 4px; }
+  .type-chip[aria-pressed="true"] .n { color: rgba(255,255,255,0.7); }
+
+  .card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .piece {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 15px 17px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+  }
+  .piece-platform {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    width: 84px;
+    flex-shrink: 0;
+  }
+  .badge {
+    font-family: "Poppins", sans-serif;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 5px;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .badge-instagram { background: linear-gradient(135deg, #f6a03a, #dd2a7b 55%, #8134af); }
+  .badge-tiktok { background: #0b0b0b; }
+  .badge-facebook { background: #1877f2; }
+  .badge-youtube { background: #ff0000; }
+  .badge-date { font-size: 11px; color: var(--muted); }
+
+  .piece-body { min-width: 0; }
+  .piece-caption {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration: none;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .piece-caption:hover { color: var(--accent-deep); }
+  .piece-type {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .piece-stats {
+    display: flex;
+    gap: 18px;
+    flex-shrink: 0;
+  }
+  .piece-stat { text-align: right; min-width: 52px; }
+  .piece-stat .v {
+    display: block;
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .piece-stat .l {
+    display: block;
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 1px;
+  }
+
+  .piece.is-hidden { display: none; }
+
+  @media (max-width: 620px) {
+    .headline-stats { grid-template-columns: 1fr; }
+    .piece { grid-template-columns: 1fr; row-gap: 10px; }
+    .piece-platform { flex-direction: row; align-items: center; width: auto; }
+    .piece-stats { justify-content: flex-start; gap: 22px; }
+  }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="masthead">
+      <span class="wordmark">The <b>Bello Bros</b> &middot; Partner Report</span>
+      <span class="updated-chip"><span class="updated-dot"></span>Stats last updated <strong>{{ report.last_updated_display }}</strong></span>
+    </div>
+
+    <p class="eyebrow">Partnership Performance</p>
+    <h1 class="title">{{ partnership }}</h1>
+
+    {% if not report.groups and not report.total_stories %}
+      <p class="empty">Nothing classified under this partnership yet.</p>
+    {% else %}
+      <div class="headline-stats">
+        <div class="stat-card">
+          <p class="stat-label">Posted</p>
+          <span class="stat-number">{{ report.total_posted }}</span>
+          <div class="stat-breakdown">
+            <span><b>{{ report.total_videos }}</b> video{{ 's' if report.total_videos != 1 else '' }}</span>
+            {% if report.total_stories %}<span><b>{{ report.total_stories }}</b> stor{{ 'ies' if report.total_stories != 1 else 'y' }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Total Views</p>
+          <span class="stat-number">{{ report.totals.Views|compact }}</span>
+          <div class="stat-breakdown">
+            <span>across {{ report.platform_breakdown|map(attribute=0)|join(', ') if report.platform_breakdown else 'no platforms yet' }}</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Total Engagement</p>
+          <span class="stat-number">{{ report.total_engagement|compact }}</span>
+          <div class="stat-breakdown">
+            <span><b>{{ report.totals.Likes|compact }}</b> likes</span>
+            <span><b>{{ report.totals.Comments|compact }}</b> comments</span>
+            <span><b>{{ report.totals.Shares|compact }}</b> shares</span>
+          </div>
+        </div>
+      </div>
+
+      {% if report.groups %}
+        <div class="section" id="section-videos">
+          <div class="section-head">
+            <h2 class="section-title">Short-Form Videos</h2>
+            <span class="section-count" id="video-count">{{ report.total_videos }} video{{ 's' if report.total_videos != 1 else '' }}</span>
+          </div>
+
+          {% if report.content_type_breakdown|length > 1 %}
+            <div class="type-filter" id="type-filter" role="group" aria-label="Filter by content type">
+              <button class="type-chip" data-type="__all__" aria-pressed="true">All<span class="n">{{ report.total_videos }}</span></button>
+              {% for content_type, count in report.content_type_breakdown %}
+                <button class="type-chip" data-type="{{ content_type }}" aria-pressed="false">{{ content_type }}<span class="n">{{ count }}</span></button>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <div class="card-list" id="video-list">
+            {% for g in report.groups %}
+              <div class="piece" data-type="{{ g.Content_Type or 'Unclassified' }}">
+                <div class="piece-platform">
+                  {% for m in g.Members %}
+                    <span class="badge badge-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+                  {% endfor %}
+                  <span class="badge-date">{{ g.Publish_Date.strftime('%b %d') if g.Publish_Date else '' }}</span>
+                </div>
+                <div class="piece-body">
+                  <a class="piece-caption" href="{{ g.Members[0].Permalink }}" target="_blank" rel="noopener">{{ (g.Members[0].Caption or '(no caption)') }}</a>
+                  <div class="piece-type">{{ g.Content_Type or 'Unclassified' }}</div>
+                </div>
+                <div class="piece-stats">
+                  <div class="piece-stat"><span class="v">{{ (g.Views or 0)|compact }}</span><span class="l">Views</span></div>
+                  <div class="piece-stat"><span class="v">{{ (g.Likes or 0)|compact }}</span><span class="l">Likes</span></div>
+                  <div class="piece-stat"><span class="v">{{ (g.Comments or 0)|compact }}</span><span class="l">Comments</span></div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if report.stories %}
+        <div class="section" id="section-stories">
+          <div class="section-head">
+            <h2 class="section-title">Stories</h2>
+            <span class="section-count">{{ report.total_stories }} stor{{ 'ies' if report.total_stories != 1 else 'y' }}</span>
+          </div>
+
+          <div class="card-list">
+            {% for s in report.stories %}
+              <div class="piece">
+                <div class="piece-platform">
+                  <span class="badge badge-{{ (s.Platform or '')|lower }}">{{ s.Platform }}</span>
+                  <span class="badge-date">{{ s.Publish_Date.strftime('%b %d') if s.Publish_Date else '' }}</span>
+                </div>
+                <div class="piece-body">
+                  <span class="piece-caption">{{ s.Caption or '(no caption)' }}</span>
+                  <div class="piece-type">{{ s.Content_Type or 'Unclassified' }}</div>
+                </div>
+                <div class="piece-stats">
+                  <div class="piece-stat"><span class="v">{{ (s.Views or 0)|compact }}</span><span class="l">Views</span></div>
+                  <div class="piece-stat"><span class="v">{{ (s.Sticker_Taps or 0)|compact }}</span><span class="l">Taps</span></div>
+                  <div class="piece-stat"><span class="v">{{ (s.Replies or 0)|compact }}</span><span class="l">Replies</span></div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    {% endif %}
+
+    <footer>
+      Prepared for {{ partnership }} by The Bello Bros. Figures reflect platform-reported totals at the time shown above.
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var chips = document.querySelectorAll('.type-chip');
+      var pieces = document.querySelectorAll('#video-list .piece');
+      var countEl = document.getElementById('video-count');
+
+      chips.forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          chips.forEach(function (c) { c.setAttribute('aria-pressed', 'false'); });
+          chip.setAttribute('aria-pressed', 'true');
+          var type = chip.getAttribute('data-type');
+          var shown = 0;
+          pieces.forEach(function (p) {
+            var match = type === '__all__' || p.getAttribute('data-type') === type;
+            p.classList.toggle('is-hidden', !match);
+            if (match) shown++;
+          });
+          countEl.textContent = shown + (shown === 1 ? ' video' : ' videos');
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

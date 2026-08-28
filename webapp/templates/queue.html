@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Classify{% endblock %}
+{% block content %}
+  <h1>Classification Queue</h1>
+
+  <div class="filters">
+    <a class="filter-toggle {{ 'active' if unclassified_only else '' }}" href="{{ url_for('queue', collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">Unclassified only</a>
+    <a class="filter-toggle {{ 'active' if not unclassified_only else '' }}" href="{{ url_for('queue', all='1', collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">All</a>
+    <span class="sep">|</span>
+    <a class="filter-toggle {{ 'active' if collabs_only else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1', limit=limit if limit != 100 else None) }}">Instagram Collabs only</a>
+    {% if collabs_only %}
+      <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None, limit=limit if limit != 100 else None) }}">Clear collab filter</a>
+    {% endif %}
+    <span class="sep">|</span>
+    <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">&#8635; Refresh</a>
+  </div>
+
+  <div class="filters">
+    <span class="meta">Show:</span>
+    {% for n in [100, 250, 500, 1000] %}
+      <a class="filter-toggle {{ 'active' if limit == n else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None, limit=n if n != 100 else None) }}">{{ n }}</a>
+    {% endfor %}
+  </div>
+
+  {% if not groups %}
+    <p class="empty">Nothing here. Try the "All" filter, or run a Sync first.</p>
+  {% else %}
+    <div class="apply-all-bar">
+      <button type="button" id="apply-all-btn" data-action="{{ url_for('classify_bulk') }}">Apply All</button>
+      <span id="apply-all-status" class="meta"></span>
+    </div>
+  {% endif %}
+
+  <div class="queue">
+    {% for g in groups %}
+      <form class="queue-row" method="post" action="{{ url_for('classify') }}"
+        data-group-id="{{ g.Group_ID or '' }}"
+        data-content-id="{{ '' if g.Group_ID else g.Members[0].Content_ID }}"
+        data-platform="{{ '' if g.Group_ID else g.Members[0].Platform }}"
+        data-platform-post-id="{{ '' if g.Group_ID else g.Members[0].Platform_Post_ID }}">
+        <input type="hidden" name="group_id" value="{{ g.Group_ID or '' }}">
+        {% if not g.Group_ID %}
+          <input type="hidden" name="content_id" value="{{ g.Members[0].Content_ID }}">
+          <input type="hidden" name="platform" value="{{ g.Members[0].Platform }}">
+          <input type="hidden" name="platform_post_id" value="{{ g.Members[0].Platform_Post_ID }}">
+        {% endif %}
+
+        <label class="row-select">
+          <input type="checkbox" class="group-checkbox"
+            data-token="{{ 'group:' + g.Group_ID if g.Group_ID else 'item:' + g.Members[0].Content_ID }}"
+            data-label="{{ g.Members|map(attribute='Platform')|join('+') }}: {{ (g.Members[0].Caption or '(no caption)')[:40] }}">
+        </label>
+
+        <div class="members">
+          {% for m in g.Members %}
+            <div class="member">
+              <span class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+              {% if m.Platform == 'Instagram' %}
+                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption caption-full">{{ m.Caption or '(no caption)' }}</a>
+              {% else %}
+                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption">{{ (m.Caption or '(no caption)')[:90] }}</a>
+              {% endif %}
+              <span class="meta">{{ m.Publish_Date.strftime('%Y-%m-%d') if m.Publish_Date else '' }} &middot; {{ '{:,}'.format(m.Views) if m.Views is not none else '?' }} views</span>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="classify-controls">
+          <input type="text" name="partnership" list="partnerships-datalist" placeholder="Partnership" value="{{ g.Partnership if g.Partnership and g.Partnership != 'Unclassified' else '' }}" class="partnership-input">
+          <input type="text" name="content_type" list="content-types-{{ loop.index }}" placeholder="Content Type" value="{{ g.Content_Type if g.Content_Type and g.Content_Type != 'Unclassified' else '' }}" class="content-type-input">
+          <datalist id="content-types-{{ loop.index }}"></datalist>
+          <button type="submit">Save</button>
+          <button type="submit" name="action" value="organic" formnovalidate class="organic-btn">Organic</button>
+        </div>
+      </form>
+    {% endfor %}
+  </div>
+
+  <datalist id="partnerships-datalist">
+    {% for p in partnerships %}<option value="{{ p.Partnership }}">{% endfor %}
+  </datalist>
+
+  <script id="partnerships-data" type="application/json">
+    {{ partnership_content_types|tojson }}
+  </script>
+{% endblock %}

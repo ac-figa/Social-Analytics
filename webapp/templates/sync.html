@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Sync{% endblock %}
+{% block content %}
+  <h1>Update Datasets</h1>
+
+  {% if not sync_available %}
+    <p class="subtitle">Sync isn't available on this deployment -- it needs all four platforms' live API credentials, which never get bundled into the hosted version for security reasons (see webapp/deploy/README.md). Run the pipelines locally instead; this dashboard reflects that new data immediately since it all lands in the same BigQuery project.</p>
+  {% else %}
+    <p class="subtitle">Pulls the latest videos from Instagram, Facebook, YouTube, and TikTok, then re-runs cross-platform matching and the Instagram Duration backfill. Takes several minutes.</p>
+
+    <form method="post" action="{{ url_for('sync_start') }}">
+      <button type="submit" id="sync-start-btn" {{ 'disabled' if status.running else '' }}>
+        {{ 'Sync in progress...' if status.running else 'Update All Datasets' }}
+      </button>
+    </form>
+
+    <div id="sync-status">
+      <p id="sync-step">{{ status.current_step or ('Last run finished ' + status.finished_at if status.finished_at else 'Never run yet') }}</p>
+      {% if status.error %}<p class="error">Error: {{ status.error }}</p>{% endif %}
+      <pre id="sync-log">{{ status.log|join('\n') }}</pre>
+    </div>
+
+    <script>
+      function poll() {
+        fetch("{{ url_for('sync_status') }}").then(function (r) { return r.json(); }).then(function (s) {
+          document.getElementById("sync-log").textContent = s.log.join("\n");
+          document.getElementById("sync-step").textContent = s.current_step || (s.finished_at ? "Last run finished " + s.finished_at : "Never run yet");
+          document.getElementById("sync-start-btn").disabled = s.running;
+          document.getElementById("sync-start-btn").textContent = s.running ? "Sync in progress..." : "Update All Datasets";
+          var log = document.getElementById("sync-log");
+          log.scrollTop = log.scrollHeight;
+          if (s.running) setTimeout(poll, 2000);
+        });
+      }
+      poll();
+    </script>
+  {% endif %}
+{% endblock %}

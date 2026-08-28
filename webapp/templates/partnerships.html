@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Partnerships{% endblock %}
+{% block content %}
+  <h1>Partnerships</h1>
+
+  <form class="inline-form" method="post" action="{{ url_for('add_partnership') }}">
+    <input type="text" name="partnership" placeholder="New partnership name (e.g. Ferrero)" required>
+    <button type="submit">Add Partnership</button>
+  </form>
+
+  <div class="partnership-list">
+    {% for p in partnerships %}
+      <div class="partnership-card">
+        <div class="partnership-card-header">
+          <h2><a href="{{ url_for('partnership_detail', partnership=p.Partnership) }}">{{ p.Partnership }}</a></h2>
+          <span class="video-count-badge {{ 'video-count-empty' if p.Video_Count == 0 else '' }}">{{ p.Video_Count }} video{{ '' if p.Video_Count == 1 else 's' }}</span>
+        </div>
+        <ul class="content-types">
+          {% for ct in p.Content_Types %}
+            <li>{{ ct }}</li>
+          {% else %}
+            <li class="empty">No content types yet</li>
+          {% endfor %}
+        </ul>
+        <div class="partnership-card-actions">
+          <form class="inline-form" method="post" action="{{ url_for('add_content_type') }}">
+            <input type="hidden" name="partnership" value="{{ p.Partnership }}">
+            <input type="text" name="content_type" placeholder="New content type (e.g. Nutella)" required>
+            <button type="submit">Add</button>
+          </form>
+          <form method="post" action="{{ url_for('delete_partnership') }}" onsubmit="return confirm('Delete {{ p.Partnership }}?');">
+            <input type="hidden" name="partnership" value="{{ p.Partnership }}">
+            <button type="submit" class="delete-btn">Delete</button>
+          </form>
+        </div>
+      </div>
+    {% else %}
+      <p class="empty">No partnerships yet -- add one above. Classifying a video with a new partnership name in the Classify tab also creates it automatically.</p>
+    {% endfor %}
+  </div>
+{% endblock %}
