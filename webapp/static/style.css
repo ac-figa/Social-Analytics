@@ -86,7 +86,13 @@ h1 { font-size: 22px; margin-bottom: 8px; }
   white-space: nowrap;
   max-width: 420px;
 }
-.member .caption:hover { text-decoration: underline; }
+.member a.caption:hover { text-decoration: underline; }
+
+/* Badge becomes the click target when it links to the platform post
+   (see partnership_detail.html) -- the caption itself stays plain text
+   so it doesn't look clickable when there's nothing to click. */
+a.platform-badge { text-decoration: none; cursor: pointer; }
+a.platform-badge:hover { opacity: 0.85; }
 .member .caption.caption-full {
   white-space: normal;
   overflow: visible;

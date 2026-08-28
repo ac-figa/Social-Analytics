@@ -82,8 +82,12 @@
           <div class="members">
             {% for m in g.Members %}
               <div class="member">
-                <span class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</span>
-                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption">{{ (m.Caption or '(no caption)')[:80] }}</a>
+                {% if m.Permalink %}
+                  <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</a>
+                {% else %}
+                  <span class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+                {% endif %}
+                <span class="caption">{{ (m.Caption or '(no caption)')[:80] }}</span>
                 <span class="meta">{{ m.Publish_Date.strftime('%Y-%m-%d') if m.Publish_Date else '' }} &middot; {{ '{:,}'.format(m.Views) if m.Views is not none else '?' }} views</span>
               </div>
             {% endfor %}
