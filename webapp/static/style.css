@@ -356,6 +356,7 @@ button:disabled { background: var(--muted); cursor: default; }
   border-radius: 6px;
   font-size: 13px;
   margin-bottom: 8px;
+  word-break: break-word;
 }
 .flash-success { background: #e3f6ea; color: var(--green); }
 .flash-error { background: #fbe9e8; color: var(--red); }
@@ -468,6 +469,9 @@ button:disabled { background: var(--muted); cursor: default; }
 }
 .stories-add-bar #submit-stories-btn { background: var(--green); }
 .stories-add-bar #submit-stories-btn:hover { background: #157a45; }
+
+.partnership-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.partnership-detail-header h1 { margin: 0; }
 
 @media (prefers-color-scheme: dark) {
   :root {

@@ -2,7 +2,12 @@
 {% block title %}{{ partnership }}{% endblock %}
 {% block content %}
   <p class="subtitle"><a href="{{ url_for('partnerships') }}">&larr; All partnerships</a></p>
-  <h1>{{ partnership }}</h1>
+  <div class="partnership-detail-header">
+    <h1>{{ partnership }}</h1>
+    <form method="post" action="{{ url_for('get_share_link', partnership=partnership) }}">
+      <button type="submit">Get Share Link</button>
+    </form>
+  </div>
 
   {% if not report.groups and not report.total_stories %}
     <p class="empty">No videos or stories classified under this partnership yet.</p>

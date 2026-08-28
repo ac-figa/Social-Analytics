@@ -19,6 +19,7 @@ truncate-and-load a staging table, then MERGE.
 """
 import logging
 import re
+import secrets
 import uuid
 from datetime import datetime, timezone
 
@@ -103,6 +104,13 @@ PARTNERSHIP_CONTENT_TYPES_TABLE = "partnership_content_types"
 PARTNERSHIPS_SCHEMA = [
     bigquery.SchemaField("Partnership", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("Created_At", "TIMESTAMP"),
+    # Set the first time a share link is generated for this partnership
+    # (see get_or_create_share_token) -- an unguessable token rather than
+    # the partnership name itself, so a brand's link doesn't also expose
+    # every other partnership's name by pattern-guessing. NULL until
+    # then; stays the same across regenerated report views so a link
+    # once shared keeps working.
+    bigquery.SchemaField("Share_Token", "STRING"),
 ]
 
 PARTNERSHIP_CONTENT_TYPES_SCHEMA = [
@@ -882,6 +890,52 @@ def delete_partnership(client: bigquery.Client, partnership: str) -> None:
                 query_parameters=[bigquery.ScalarQueryParameter("partnership", "STRING", partnership)]
             ),
         ).result()
+
+
+def get_or_create_share_token(client: bigquery.Client, partnership: str) -> str:
+    """Returns this partnership's share-link token, generating and
+    persisting one on first request -- stable across calls, so a link
+    once handed to a brand keeps working rather than rotating every time
+    someone clicks "Get Share Link" again."""
+    rows = list(
+        client.query(
+            f"SELECT Share_Token FROM `{_table_ref(PARTNERSHIPS_TABLE)}` WHERE Partnership = @partnership",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("partnership", "STRING", partnership)]
+            ),
+        ).result()
+    )
+    existing = rows[0]["Share_Token"] if rows else None
+    if existing:
+        return existing
+
+    token = secrets.token_urlsafe(24)
+    client.query(
+        f"UPDATE `{_table_ref(PARTNERSHIPS_TABLE)}` SET Share_Token = @token WHERE Partnership = @partnership",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("token", "STRING", token),
+                bigquery.ScalarQueryParameter("partnership", "STRING", partnership),
+            ]
+        ),
+    ).result()
+    return token
+
+
+def get_partnership_by_share_token(client: bigquery.Client, token: str):
+    """The Partnership name for a share-link token, or None if it doesn't
+    match anything -- used by the public /share/<token> route, which has
+    no login, so an unrecognized token must fail closed (404) rather than
+    leaking which tokens are valid."""
+    rows = list(
+        client.query(
+            f"SELECT Partnership FROM `{_table_ref(PARTNERSHIPS_TABLE)}` WHERE Share_Token = @token",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("token", "STRING", token)]
+            ),
+        ).result()
+    )
+    return rows[0]["Partnership"] if rows else None
 
 
 def add_partnership(client: bigquery.Client, partnership: str) -> None:

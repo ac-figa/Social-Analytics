@@ -37,7 +37,10 @@ if _AUTH_ENABLED:
 
     @app.before_request
     def _require_login():
-        if request.endpoint in ("login", "login_start", "auth_callback", "static") or auth.is_logged_in():
+        # public_share is the whole point of this feature: a link brands
+        # can open without a Google account on ALLOWED_EMAILS. Everything
+        # else on this site still requires internal sign-in.
+        if request.endpoint in ("login", "login_start", "auth_callback", "static", "public_share") or auth.is_logged_in():
             return None
         return redirect(url_for("login"))
 
@@ -182,6 +185,25 @@ def partnership_detail(partnership):
     client = db.get_client()
     report = db.get_partnership_report(client, partnership)
     return render_template("partnership_detail.html", partnership=partnership, report=report)
+
+
+@app.route("/partnerships/<partnership>/share", methods=["POST"])
+def get_share_link(partnership):
+    client = db.get_client()
+    token = db.get_share_token(client, partnership)
+    link = url_for("public_share", token=token, _external=True)
+    flash(f"Share link for {partnership} (anyone with this link can view it): {link}", "success")
+    return redirect(url_for("partnership_detail", partnership=partnership))
+
+
+@app.route("/share/<token>")
+def public_share(token):
+    client = db.get_client()
+    partnership = db.get_partnership_by_share_token(client, token)
+    if partnership is None:
+        return render_template("share_not_found.html"), 404
+    report = db.get_partnership_report(client, partnership)
+    return render_template("share.html", partnership=partnership, report=report)
 
 
 @app.route("/partnerships/content-types/add", methods=["POST"])

@@ -354,6 +354,14 @@ def delete_partnership(client: bigquery.Client, partnership: str) -> tuple:
     return True, f"Deleted '{partnership}'."
 
 
+def get_share_token(client: bigquery.Client, partnership: str) -> str:
+    return content_store.get_or_create_share_token(client, partnership)
+
+
+def get_partnership_by_share_token(client: bigquery.Client, token: str):
+    return content_store.get_partnership_by_share_token(client, token)
+
+
 def add_content_type(client: bigquery.Client, partnership: str, content_type: str) -> None:
     content_store.add_content_type(client, partnership, content_type)
 
