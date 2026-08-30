@@ -68,12 +68,16 @@ def _secret_path(secret_name: str, version: str = "latest") -> str:
     return f"projects/{GCP_PROJECT_ID}/secrets/{secret_name}/versions/{version}"
 
 
-def fetch_secret(secret_name: str) -> bytes | None:
+def fetch_secret(secret_name: str) -> tuple[bytes, str] | tuple[None, None]:
+    """Returns (content, resolved_version_name) -- the version name is the
+    fully-resolved "projects/.../versions/N" path (not the "latest"
+    alias), so a later rotation can destroy this exact version instead of
+    guessing which one is now stale."""
     try:
         response = _sm_client.access_secret_version(name=_secret_path(secret_name))
     except NotFound:
-        return None
-    return response.payload.data
+        return None, None
+    return response.payload.data, response.name
 
 
 def add_secret_version(secret_name: str, data: bytes) -> None:
@@ -81,7 +85,14 @@ def add_secret_version(secret_name: str, data: bytes) -> None:
     _sm_client.add_secret_version(request={"parent": parent, "payload": {"data": data}})
 
 
-def maybe_rotate_secret(secret_name: str, path: Path, original: bytes) -> None:
+def maybe_rotate_secret(secret_name: str, path: Path, original: bytes, original_version: str) -> None:
+    """TikTok's refresh token rotates on basically every run (see
+    tiktokpipeline/src/config.py). Without cleanup, that would add a new
+    Secret Manager version every day forever -- each active version costs
+    a small monthly fee beyond the first 6 free ones, so left alone the
+    bill would quietly grow every day it rotates. Destroying the version
+    it replaces keeps exactly one active version per secret at all
+    times, so this never costs more than a handful of secrets do today."""
     if not path.exists():
         return
     current = path.read_bytes()
@@ -89,6 +100,11 @@ def maybe_rotate_secret(secret_name: str, path: Path, original: bytes) -> None:
         return
     add_secret_version(secret_name, current)
     print(f"Rotated credential detected -- pushed a new version of secret '{secret_name}'", flush=True)
+    if original_version:
+        try:
+            _sm_client.destroy_secret_version(request={"name": original_version})
+        except Exception as e:  # noqa: BLE001 -- best-effort cleanup, never worth failing the run over
+            print(f"(couldn't destroy old version {original_version}: {e})", flush=True)
 
 
 def run(label: str, args: list, cwd: Path, extra_env: dict = None) -> bool:
@@ -104,7 +120,7 @@ def run(label: str, args: list, cwd: Path, extra_env: dict = None) -> bool:
 def main() -> None:
     failures = []
 
-    shared_env_data = fetch_secret(SHARED_ENV_SECRET)
+    shared_env_data, _ = fetch_secret(SHARED_ENV_SECRET)
     if shared_env_data is None:
         print(f"--- Warning: secret '{SHARED_ENV_SECRET}' not found -- "
               f"matching/backfill will likely fail ---", flush=True)
@@ -112,7 +128,7 @@ def main() -> None:
         SHARED_ENV_PATH.write_bytes(shared_env_data)
 
     for target in SYNC_TARGETS:
-        data = fetch_secret(target["secret"])
+        data, version_name = fetch_secret(target["secret"])
         if data is None:
             print(f"--- Skipping {target['label']} (secret '{target['secret']}' not set up yet) ---", flush=True)
             continue
@@ -125,7 +141,7 @@ def main() -> None:
             failures.append(target["label"])
 
         if target["rotates"]:
-            maybe_rotate_secret(target["secret"], env_path, data)
+            maybe_rotate_secret(target["secret"], env_path, data, version_name)
 
     if not run("Matching across platforms", ["-m", "shared.src.run_matching"], REPO_ROOT):
         failures.append("Matching across platforms")

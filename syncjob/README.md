@@ -85,13 +85,17 @@ done
 
 TikTok's refresh token rotates on every run (see
 `tiktokpipeline/src/config.py`), so the job also needs permission to
-*write* a new version of just those two secrets -- nothing else:
+*write a new version and destroy the one it replaces* for just those two
+secrets -- nothing else. The job always deletes the old version the
+moment it adds a new one (see `syncjob/main.py`), so this never
+accumulates and never costs more than the price of a single active
+secret version per account:
 
 ```bash
 for secret in sync-env-tiktok sync-env-tiktok-calciobros; do
   gcloud secrets add-iam-policy-binding "$secret" \
     --member="serviceAccount:sync-runner@${PROJECT_ID}.iam.gserviceaccount.com" \
-    --role="roles/secretmanager.secretVersionAdder"
+    --role="roles/secretmanager.secretVersionManager"
 done
 ```
 
