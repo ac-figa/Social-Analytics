@@ -31,6 +31,21 @@ def parse_timestamp(raw: str):
         return None
 
 
+def _normalize_permalink(raw: str):
+    """Unlike Instagram's `permalink` field, a video node's `permalink_url`
+    from the Graph API comes back as a path relative to facebook.com (e.g.
+    "/PageName/videos/1234567890/"), not a full URL -- confirmed live,
+    Aug 2026: every dashboard link built directly from this field resolved
+    against the *dashboard's own* origin instead of Facebook's, landing on
+    a broken/unrelated page. Prefix it with the real domain whenever it
+    isn't absolute already."""
+    if not raw:
+        return None
+    if raw.startswith("/"):
+        return f"https://www.facebook.com{raw}"
+    return raw
+
+
 def build_master_row(video_detail: dict, insights: dict, page_info: dict) -> dict:
     """video_detail: result of graph_client.get_video_details()[video_id]
     insights: result of graph_client.get_post_insights()[video_id] --
@@ -57,7 +72,7 @@ def build_master_row(video_detail: dict, insights: dict, page_info: dict) -> dic
         "Description": video_detail.get("description"),
         "Length": video_detail.get("length"),
         "Publish_Date": _normalize_timestamp(video_detail.get("created_time")),
-        "Permalink": video_detail.get("permalink_url"),
+        "Permalink": _normalize_permalink(video_detail.get("permalink_url")),
         "Views": views,
         "Views_Organic": insights.get("post_video_views_organic"),
         "Impressions": None,  # confirmed unavailable -- see graph_client.py module docstring
