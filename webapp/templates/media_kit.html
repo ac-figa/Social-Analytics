@@ -1,71 +1,63 @@
-{% extends "base.html" %}
+{% extends "base_shell.html" %}
 {% block title %}Media Kit{% endblock %}
 {% block content %}
-  <h1>Media Kit</h1>
-  <p class="subtitle">Latest follower/subscriber counts and recent view volume across every account, for pulling into brand pitches.</p>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Media Kit</h1>
+      <p class="page-subtitle">Latest follower/subscriber counts and recent view volume across every account, for pulling into brand pitches.</p>
+    </div>
+  </div>
 
   {% if brands|length > 1 %}
-    <div class="filters">
-      <a class="filter-toggle {{ 'active' if not brand else '' }}" href="{{ url_for('media_kit') }}">All Brands</a>
+    <div class="pillbar">
+      <a class="pill {{ 'is-active' if not brand else '' }}" href="{{ url_for('media_kit') }}">All Brands</a>
       {% for b in brands %}
-        <a class="filter-toggle {{ 'active' if b == brand else '' }}" href="{{ url_for('media_kit', brand=b) }}">{{ b }}</a>
+        <a class="pill {{ 'is-active' if b == brand else '' }}" href="{{ url_for('media_kit', brand=b) }}">{{ b }}</a>
       {% endfor %}
     </div>
   {% endif %}
 
   {% if not accounts %}
-    <p class="empty">No account stats{{ ' for ' + brand if brand else '' }} yet -- run a sync on each pipeline to capture the first snapshot.</p>
+    <p class="db-empty">No account stats{{ ' for ' + brand if brand else '' }} yet — run a sync on each pipeline to capture the first snapshot.</p>
   {% else %}
-    <h2 class="section-title">All Platforms Combined</h2>
-    <div class="stat-tiles">
-      <div class="stat-tile">
-        <span class="stat-value">{{ '{:,}'.format(totals.Followers) }}</span>
-        <span class="stat-label">Total Followers</span>
-      </div>
-      <div class="stat-tile">
-        <span class="stat-value">{{ '{:,}'.format(totals.Views_30d) }}</span>
-        <span class="stat-label">Views (30d)</span>
-      </div>
-      <div class="stat-tile">
-        <span class="stat-value">{{ '{:,}'.format(totals.Views_90d) }}</span>
-        <span class="stat-label">Views (90d)</span>
-      </div>
-      <div class="stat-tile">
-        <span class="stat-value">{{ '{:,}'.format(totals.Views_270d) }}</span>
-        <span class="stat-label">Views (270d)</span>
-      </div>
+    <h2 class="mk-section-title">All Platforms Combined</h2>
+    <div class="stat-strip">
+      <div class="stat-chip accent"><span class="n">{{ '{:,}'.format(totals.Followers) }}</span><span class="l">total followers</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(totals.Views_30d) }}</span><span class="l">views (30d)</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(totals.Views_90d) }}</span><span class="l">views (90d)</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(totals.Views_270d) }}</span><span class="l">views (270d)</span></div>
     </div>
 
-    <h2 class="section-title">By Account</h2>
-    <div class="media-kit-grid">
+    <h2 class="mk-section-title">By Account</h2>
+    <div class="mk-grid">
       {% for a in accounts %}
-        <div class="media-kit-card">
-          <div class="media-kit-card-header">
-            <span class="platform-badge platform-{{ a.Platform|lower }}">{{ a.Platform }}</span>
-            <span class="media-kit-account">{{ a.Account_Username }}</span>
+        <div class="mk-card">
+          <div class="mk-card-header">
+            <span class="badge badge-{{ a.Platform|lower }}">{{ a.Platform }}</span>
+            <span class="mk-account">{{ a.Account_Username }}</span>
           </div>
 
-          <div class="media-kit-followers">
-            <span class="stat-value">{{ '{:,}'.format(a.Followers) if a.Followers is not none else '—' }}</span>
-            <span class="stat-label">{{ 'Subscribers' if a.Platform == 'YouTube' else 'Followers' }}</span>
+          <div class="mk-followers">
+            <span class="n">{{ '{:,}'.format(a.Followers) if a.Followers is not none else '—' }}</span>
+            <span class="l">{{ 'Subscribers' if a.Platform == 'YouTube' else 'Followers' }}</span>
           </div>
 
-          <div class="stat-tiles media-kit-views">
-            <div class="stat-tile">
-              <span class="stat-value">{{ '{:,}'.format(a.Views_30d) if a.Views_30d is not none else '—' }}</span>
-              <span class="stat-label">Views (30d)</span>
+          <div class="mk-views">
+            <div class="mk-views-tile">
+              <span class="n">{{ '{:,}'.format(a.Views_30d) if a.Views_30d is not none else '—' }}</span>
+              <span class="l">30d</span>
             </div>
-            <div class="stat-tile">
-              <span class="stat-value">{{ '{:,}'.format(a.Views_90d) if a.Views_90d is not none else '—' }}</span>
-              <span class="stat-label">Views (90d)</span>
+            <div class="mk-views-tile">
+              <span class="n">{{ '{:,}'.format(a.Views_90d) if a.Views_90d is not none else '—' }}</span>
+              <span class="l">90d</span>
             </div>
-            <div class="stat-tile">
-              <span class="stat-value">{{ '{:,}'.format(a.Views_270d) if a.Views_270d is not none else '—' }}</span>
-              <span class="stat-label">Views (270d)</span>
+            <div class="mk-views-tile">
+              <span class="n">{{ '{:,}'.format(a.Views_270d) if a.Views_270d is not none else '—' }}</span>
+              <span class="l">270d</span>
             </div>
           </div>
 
-          <p class="media-kit-updated">Updated {{ a.Snapshot_Date.strftime('%Y-%m-%d') if a.Snapshot_Date else '—' }}</p>
+          <p class="mk-updated">Updated {{ a.Snapshot_Date.strftime('%Y-%m-%d') if a.Snapshot_Date else '—' }}</p>
         </div>
       {% endfor %}
     </div>

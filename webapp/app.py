@@ -91,6 +91,7 @@ def queue():
         unclassified_only=unclassified_only,
         collabs_only=collabs_only,
         limit=limit,
+        nav_counts=db.get_dashboard_counts(client),
     )
 
 
@@ -161,7 +162,9 @@ def group_selected():
 @app.route("/partnerships")
 def partnerships():
     client = db.get_client()
-    return render_template("partnerships.html", partnerships=db.list_partnerships(client))
+    return render_template(
+        "partnerships.html", partnerships=db.list_partnerships(client), nav_counts=db.get_dashboard_counts(client)
+    )
 
 
 @app.route("/partnerships/add", methods=["POST"])
@@ -235,6 +238,7 @@ def browse():
     return render_template(
         "browse.html", items=items, platform=platform, platforms=PLATFORMS, accounts=accounts, account=account,
         partnerships=partnerships, partnership_content_types=partnership_content_types,
+        nav_counts=db.get_dashboard_counts(client),
     )
 
 
@@ -245,7 +249,7 @@ def pending():
     if months <= 0:
         months = None
     matches = db.list_pending_matches(client, months=months)
-    return render_template("pending.html", matches=matches, months=months)
+    return render_template("pending.html", matches=matches, months=months, nav_counts=db.get_dashboard_counts(client))
 
 
 @app.route("/pending/confirm", methods=["POST"])
@@ -271,6 +275,7 @@ def media_kit():
         totals=media_kit_data["totals"],
         brands=media_kit_data["brands"],
         brand=brand,
+        nav_counts=db.get_dashboard_counts(client),
     )
 
 
@@ -284,6 +289,7 @@ def stories():
         platforms=PLATFORMS,
         partnerships=partnerships,
         partnership_content_types={p["Partnership"]: p["Content_Types"] for p in partnerships},
+        nav_counts=db.get_dashboard_counts(client),
     )
 
 
@@ -326,7 +332,10 @@ def delete_story():
 
 @app.route("/sync")
 def sync_page():
-    return render_template("sync.html", status=sync.get_status(), sync_available=config.SYNC_AVAILABLE)
+    return render_template(
+        "sync.html", status=sync.get_status(), sync_available=config.SYNC_AVAILABLE,
+        nav_counts=db.get_dashboard_counts(db.get_client()),
+    )
 
 
 @app.route("/sync/start", methods=["POST"])

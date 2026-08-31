@@ -1,39 +1,46 @@
-{% extends "base.html" %}
+{% extends "base_shell.html" %}
 {% block title %}Classify{% endblock %}
 {% block content %}
-  <h1>Classification Queue</h1>
-
-  <div class="filters">
-    <a class="filter-toggle {{ 'active' if unclassified_only else '' }}" href="{{ url_for('queue', collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">Unclassified only</a>
-    <a class="filter-toggle {{ 'active' if not unclassified_only else '' }}" href="{{ url_for('queue', all='1', collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">All</a>
-    <span class="sep">|</span>
-    <a class="filter-toggle {{ 'active' if collabs_only else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1', limit=limit if limit != 100 else None) }}">Instagram Collabs only</a>
-    {% if collabs_only %}
-      <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None, limit=limit if limit != 100 else None) }}">Clear collab filter</a>
-    {% endif %}
-    <span class="sep">|</span>
-    <a class="filter-toggle" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">&#8635; Refresh</a>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Classification Queue</h1>
+      <p class="page-subtitle">Videos and groups waiting to be tagged with a partnership. Select several and Apply All to classify them together.</p>
+    </div>
   </div>
 
-  <div class="filters">
-    <span class="meta">Show:</span>
-    {% for n in [100, 250, 500, 1000] %}
-      <a class="filter-toggle {{ 'active' if limit == n else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None, limit=n if n != 100 else None) }}">{{ n }}</a>
-    {% endfor %}
+  <div class="toolbar-row">
+    <div class="pillbar">
+      <a class="pill {{ 'is-active' if unclassified_only else '' }}" href="{{ url_for('queue', collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">Unclassified only</a>
+      <a class="pill {{ 'is-active' if not unclassified_only else '' }}" href="{{ url_for('queue', all='1', collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">All</a>
+      <div class="divider"></div>
+      <a class="pill {{ 'is-active' if collabs_only else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1', limit=limit if limit != 100 else None) }}">IG Collabs only</a>
+      {% if collabs_only %}
+        <a class="pill pill-ghost" href="{{ url_for('queue', all='1' if not unclassified_only else None, limit=limit if limit != 100 else None) }}">Clear collab filter</a>
+      {% endif %}
+      <div class="divider"></div>
+      <a class="pill pill-ghost" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None, limit=limit if limit != 100 else None) }}">⟲ Refresh</a>
+    </div>
+    <div class="pillbar">
+      <span class="pillbar-label">Show</span>
+      {% for n in [100, 250, 500, 1000] %}
+        <a class="pill {{ 'is-active' if limit == n else '' }}" href="{{ url_for('queue', all='1' if not unclassified_only else None, collabs='1' if collabs_only else None, limit=n if n != 100 else None) }}">{{ n }}</a>
+      {% endfor %}
+    </div>
   </div>
 
   {% if not groups %}
-    <p class="empty">Nothing here. Try the "All" filter, or run a Sync first.</p>
+    <p class="db-empty">Nothing here. Try the "All" filter, or run a Sync first.</p>
   {% else %}
-    <div class="apply-all-bar">
-      <button type="button" id="apply-all-btn" data-action="{{ url_for('classify_bulk') }}">Apply All</button>
-      <span id="apply-all-status" class="meta"></span>
+    <div class="bulk-bar">
+      <span><strong>Apply All</strong> — classify every filled-in row below in one click</span>
+      <button type="button" id="apply-all-btn" class="btn btn-good btn-sm" style="margin-left:auto;" data-action="{{ url_for('classify_bulk') }}">Apply All</button>
+      <span id="apply-all-status" class="page-subtitle" style="margin:0;"></span>
     </div>
   {% endif %}
 
-  <div class="queue">
+  <div class="card-list">
     {% for g in groups %}
-      <form class="queue-row" method="post" action="{{ url_for('classify') }}"
+      <form class="qcard" method="post" action="{{ url_for('classify') }}"
         data-group-id="{{ g.Group_ID or '' }}"
         data-content-id="{{ '' if g.Group_ID else g.Members[0].Content_ID }}"
         data-platform="{{ '' if g.Group_ID else g.Members[0].Platform }}"
@@ -51,26 +58,26 @@
             data-label="{{ g.Members|map(attribute='Platform')|join('+') }}: {{ (g.Members[0].Caption or '(no caption)')[:40] }}">
         </label>
 
-        <div class="members">
+        <div class="qcard-members">
           {% for m in g.Members %}
-            <div class="member">
-              <span class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+            <div class="qmember">
+              <span class="badge badge-{{ m.Platform|lower }}">{{ m.Platform }}</span>
               {% if m.Platform == 'Instagram' %}
-                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption caption-full">{{ m.Caption or '(no caption)' }}</a>
+                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="cap cap-full">{{ m.Caption or '(no caption)' }}</a>
               {% else %}
-                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="caption">{{ (m.Caption or '(no caption)')[:90] }}</a>
+                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="cap">{{ (m.Caption or '(no caption)')[:90] }}</a>
               {% endif %}
-              <span class="meta">{{ m.Publish_Date.strftime('%Y-%m-%d') if m.Publish_Date else '' }} &middot; {{ '{:,}'.format(m.Views) if m.Views is not none else '?' }} views</span>
+              <span class="qmeta">{{ m.Publish_Date.strftime('%Y-%m-%d') if m.Publish_Date else '' }} · {{ '{:,}'.format(m.Views) if m.Views is not none else '?' }} views</span>
             </div>
           {% endfor %}
         </div>
 
-        <div class="classify-controls">
-          <input type="text" name="partnership" list="partnerships-datalist" placeholder="Partnership" value="{{ g.Partnership if g.Partnership and g.Partnership != 'Unclassified' else '' }}" class="partnership-input">
-          <input type="text" name="content_type" list="content-types-{{ loop.index }}" placeholder="Content Type" value="{{ g.Content_Type if g.Content_Type and g.Content_Type != 'Unclassified' else '' }}" class="content-type-input">
+        <div class="qcard-classify">
+          <input type="text" name="partnership" list="partnerships-datalist" placeholder="Partnership" value="{{ g.Partnership if g.Partnership and g.Partnership != 'Unclassified' else '' }}" class="field-input partnership-input">
+          <input type="text" name="content_type" list="content-types-{{ loop.index }}" placeholder="Content Type" value="{{ g.Content_Type if g.Content_Type and g.Content_Type != 'Unclassified' else '' }}" class="field-input content-type-input">
           <datalist id="content-types-{{ loop.index }}"></datalist>
-          <button type="submit">Save</button>
-          <button type="submit" name="action" value="organic" formnovalidate class="organic-btn">Organic</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save</button>
+          <button type="submit" name="action" value="organic" formnovalidate class="btn btn-ghost btn-sm">Organic</button>
         </div>
       </form>
     {% endfor %}

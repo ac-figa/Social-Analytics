@@ -1078,6 +1078,39 @@ def list_classification_queue(
     return results[:limit]
 
 
+def get_dashboard_counts(client: bigquery.Client) -> dict:
+    """Two cheap COUNT(*)s for the sidebar nav badges -- unclassified
+    (same universe as list_classification_queue(unclassified_only=True):
+    unclassified/ungrouped content_groups plus active content_items with
+    no group at all) and pending (unconfirmed content_group_members).
+    Deliberately its own lightweight query rather than reusing
+    list_classification_queue()/list_pending_matches(), which both pull
+    full row data (every member's caption/permalink/etc.) just to be
+    counted -- a badge only needs the number."""
+    query = f"""
+    SELECT
+      (
+        SELECT COUNT(*) FROM `{_table_ref(CONTENT_GROUPS_TABLE)}`
+        WHERE Partnership IS NULL OR Partnership = 'Unclassified'
+      ) + (
+        SELECT COUNT(*)
+        FROM `{_table_ref(CONTENT_ITEMS_TABLE)}` ci
+        LEFT JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m ON ci.Content_ID = m.Content_ID
+        WHERE m.Content_ID IS NULL AND ci.API_Status = 'Active'
+      ) AS Unclassified_Count,
+      (
+        SELECT COUNT(*) FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` WHERE Confirmed = FALSE
+      ) AS Pending_Count
+    """
+    rows = list(client.query(query).result())
+    if not rows:
+        return {"unclassified": 0, "pending": 0}
+    return {
+        "unclassified": rows[0]["Unclassified_Count"] or 0,
+        "pending": rows[0]["Pending_Count"] or 0,
+    }
+
+
 def list_pending_matches(client: bigquery.Client, since=None) -> list:
     """Every unconfirmed (Confirmed=False) group membership, with the full
     group's members for context -- what the dashboard's review queue

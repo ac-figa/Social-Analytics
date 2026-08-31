@@ -1,23 +1,28 @@
-{% extends "base.html" %}
+{% extends "base_shell.html" %}
 {% block title %}Sync{% endblock %}
 {% block content %}
-  <h1>Update Datasets</h1>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Update Datasets</h1>
+      {% if not sync_available %}
+        <p class="page-subtitle">Sync isn't available on this deployment — it needs all four platforms' live API credentials, which never get bundled into the hosted version for security reasons (see webapp/deploy/README.md). Run the pipelines locally instead; this dashboard reflects that new data immediately since it all lands in the same BigQuery project.</p>
+      {% else %}
+        <p class="page-subtitle">Pulls the latest videos from Instagram, Facebook, YouTube, and TikTok, then re-runs cross-platform matching and the Instagram Duration backfill. Takes several minutes.</p>
+      {% endif %}
+    </div>
+  </div>
 
-  {% if not sync_available %}
-    <p class="subtitle">Sync isn't available on this deployment -- it needs all four platforms' live API credentials, which never get bundled into the hosted version for security reasons (see webapp/deploy/README.md). Run the pipelines locally instead; this dashboard reflects that new data immediately since it all lands in the same BigQuery project.</p>
-  {% else %}
-    <p class="subtitle">Pulls the latest videos from Instagram, Facebook, YouTube, and TikTok, then re-runs cross-platform matching and the Instagram Duration backfill. Takes several minutes.</p>
-
+  {% if sync_available %}
     <form method="post" action="{{ url_for('sync_start') }}">
-      <button type="submit" id="sync-start-btn" {{ 'disabled' if status.running else '' }}>
+      <button type="submit" id="sync-start-btn" class="btn btn-primary" {{ 'disabled' if status.running else '' }}>
         {{ 'Sync in progress...' if status.running else 'Update All Datasets' }}
       </button>
     </form>
 
-    <div id="sync-status">
-      <p id="sync-step">{{ status.current_step or ('Last run finished ' + status.finished_at if status.finished_at else 'Never run yet') }}</p>
-      {% if status.error %}<p class="error">Error: {{ status.error }}</p>{% endif %}
-      <pre id="sync-log">{{ status.log|join('\n') }}</pre>
+    <div class="db-sync-status">
+      <p id="sync-step" class="db-sync-step">{{ status.current_step or ('Last run finished ' + status.finished_at if status.finished_at else 'Never run yet') }}</p>
+      {% if status.error %}<p class="db-error">Error: {{ status.error }}</p>{% endif %}
+      <pre id="sync-log" class="db-sync-log">{{ status.log|join('\n') }}</pre>
     </div>
 
     <script>
