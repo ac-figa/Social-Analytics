@@ -1201,30 +1201,34 @@ def get_latest_account_stats(client: bigquery.Client) -> list:
     return [dict(r) for r in client.query(query).result()]
 
 
-def get_views_in_window(client: bigquery.Client, platform: str, account_username: str, days: int) -> int:
-    """SUM(Views) across every content_item that account published in the
-    last `days` days. Computed live from content_items rather than
-    stored/snapshotted -- cheap to compute on demand (one indexed range
-    scan) and never goes stale the way a cached number would."""
-    query = f"""
-    SELECT SUM(Views) AS Total_Views
-    FROM `{_table_ref(CONTENT_ITEMS_TABLE)}`
-    WHERE Platform = @platform AND Account_Username = @account_username
-      AND Publish_Date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
-    """
-    rows = list(
-        client.query(
-            query,
-            job_config=bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("platform", "STRING", platform),
-                    bigquery.ScalarQueryParameter("account_username", "STRING", account_username),
-                    bigquery.ScalarQueryParameter("days", "INT64", days),
-                ]
-            ),
-        ).result()
+def get_views_in_windows_bulk(client: bigquery.Client, windows: tuple = (30, 90, 270)) -> dict:
+    """SUM(Views) per (Platform, Account_Username) across every window in
+    one query, computed live from content_items rather than stored/
+    snapshotted -- cheap on demand and never goes stale the way a cached
+    number would. Replaces the old get_views_in_window(), which the Media
+    Kit page called once per account per window (confirmed live, Aug
+    2026: 6+ accounts x 3 windows meant 18+ sequential BigQuery query
+    jobs -- each with its own job-scheduling overhead -- to render one
+    page). One conditional-aggregation query gets every account's every
+    window in a single round trip instead. Returns
+    {(platform, account_username): {days: total_views}}."""
+    case_columns = ",\n      ".join(
+        f"SUM(CASE WHEN Publish_Date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {int(days)} DAY) "
+        f"THEN Views ELSE 0 END) AS Views_{int(days)}d"
+        for days in windows
     )
-    return (rows[0]["Total_Views"] or 0) if rows else 0
+    query = f"""
+    SELECT Platform, Account_Username,
+      {case_columns}
+    FROM `{_table_ref(CONTENT_ITEMS_TABLE)}`
+    GROUP BY Platform, Account_Username
+    """
+    result = {}
+    for row in client.query(query).result():
+        result[(row["Platform"], row["Account_Username"])] = {
+            days: (row[f"Views_{days}d"] or 0) for days in windows
+        }
+    return result
 
 
 def list_stories(client: bigquery.Client, partnership: str = None) -> list:

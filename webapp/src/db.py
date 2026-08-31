@@ -58,8 +58,24 @@ from . import config  # noqa: E402
 UPDATED_BY = "webapp"
 
 
+_client = None
+
+
 def get_client() -> bigquery.Client:
-    return bigquery.Client(project=config.BQ_PROJECT_ID)
+    """One bigquery.Client per process, built on first use and reused for
+    every request after that. Every route handler used to call this at
+    the top of the request and get a brand-new Client() back each time --
+    that re-resolves credentials and rebuilds the HTTP session on every
+    single page load, which is real (if easy to miss) latency stacked on
+    top of BigQuery's own per-query overhead. bigquery.Client is safe to
+    share across requests within one process (that's exactly how it's
+    documented to be used); gunicorn's multiple worker processes (see
+    Dockerfile) each still get their own instance, so this never shares
+    a client across processes."""
+    global _client
+    if _client is None:
+        _client = bigquery.Client(project=config.BQ_PROJECT_ID)
+    return _client
 
 
 def ensure_schema(client: bigquery.Client) -> None:
@@ -473,8 +489,8 @@ def get_media_kit(client: bigquery.Client, brand: str = None) -> dict:
     """Media Kit page data: one card per account with latest follower/
     subscriber count (from the daily account_stats snapshots) plus Views
     in the last 30/90/270 days (computed live from content_items -- see
-    content_store.get_views_in_window()'s docstring for why that's not
-    stored), and an aggregate total across the accounts shown -- every
+    content_store.get_views_in_windows_bulk()'s docstring for why that's
+    not stored), and an aggregate total across the accounts shown -- every
     platform summed together, the one number a brand pitch opens with.
     brand: optional filter (e.g. "Calcio Bros") -- when set, only that
     brand's accounts are returned and totals are scoped to match, so the
@@ -491,11 +507,11 @@ def get_media_kit(client: bigquery.Client, brand: str = None) -> dict:
         accounts = [a for a in accounts if a["Brand"] == brand]
 
     windows = (30, 90, 270)
+    views_by_account = content_store.get_views_in_windows_bulk(client, windows)
     for a in accounts:
+        account_views = views_by_account.get((a["Platform"], a["Account_Username"]), {})
         for days in windows:
-            a[f"Views_{days}d"] = content_store.get_views_in_window(
-                client, a["Platform"], a["Account_Username"], days
-            )
+            a[f"Views_{days}d"] = account_views.get(days, 0)
 
     totals = {"Followers": 0, "Views_30d": 0, "Views_90d": 0, "Views_270d": 0}
     for a in accounts:
