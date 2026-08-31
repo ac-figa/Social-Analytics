@@ -1,47 +1,54 @@
-{% extends "base.html" %}
+{% extends "base_shell.html" %}
 {% block title %}Pending Matches{% endblock %}
 {% block content %}
-  <h1>Pending Matches</h1>
-  <p class="subtitle">Auto-suggested cross-platform matches that scored below the auto-confirm threshold. Review each one and accept or reject it.</p>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Pending Matches</h1>
+      <p class="page-subtitle">Auto-suggested cross-platform matches that scored below the auto-confirm threshold. Review each one and accept or reject it.</p>
+    </div>
+  </div>
 
-  <div class="filters">
+  <div class="pillbar">
     {% for m in [3, 6, 9, 12] %}
-      <a class="filter-toggle {{ 'active' if months == m else '' }}" href="{{ url_for('pending', months=m) }}">Last {{ m }} months</a>
+      <a class="pill {{ 'is-active' if months == m else '' }}" href="{{ url_for('pending', months=m) }}">Last {{ m }} months</a>
     {% endfor %}
-    <a class="filter-toggle {{ 'active' if months is none else '' }}" href="{{ url_for('pending', months=0) }}">All time</a>
+    <a class="pill {{ 'is-active' if months is none else '' }}" href="{{ url_for('pending', months=0) }}">All time</a>
   </div>
 
   {% if not matches %}
-    <p class="empty">Nothing pending in this time range{{ '.' if months is none else ' -- try "All time".' }}</p>
+    <p class="db-empty">Nothing pending in this time range{{ '.' if months is none else ' — try "All time".' }}</p>
   {% endif %}
 
-  <div class="pending-list">
+  <div class="plist">
     {% for m in matches %}
-      <div class="pending-row">
-        <div class="pending-candidate">
-          <span class="platform-badge platform-{{ m.Pending_Platform|lower }}">{{ m.Pending_Platform }}</span>
-          <a href="{{ m.Pending_Permalink }}" target="_blank" rel="noopener">{{ (m.Pending_Caption or '(no caption)')[:90] }}</a>
-          <span class="meta">{{ m.Pending_Publish_Date.strftime('%Y-%m-%d') if m.Pending_Publish_Date else '' }} &middot; confidence {{ '%.2f'|format(m.Match_Confidence) if m.Match_Confidence is not none else '?' }}</span>
+      <div class="pcard">
+        <div class="pcard-side">
+          <div class="qmember">
+            <span class="badge badge-{{ m.Pending_Platform|lower }}">{{ m.Pending_Platform }}</span>
+            <span class="qmeta">confidence {{ '%.2f'|format(m.Match_Confidence) if m.Match_Confidence is not none else '?' }}</span>
+          </div>
+          <a href="{{ m.Pending_Permalink }}" target="_blank" rel="noopener" class="cap">{{ (m.Pending_Caption or '(no caption)')[:90] }}</a>
+          <span class="qmeta">{{ m.Pending_Publish_Date.strftime('%Y-%m-%d') if m.Pending_Publish_Date else '' }}</span>
         </div>
-        <div class="pending-vs">suggested match for</div>
-        <div class="pending-existing">
+        <div class="pcard-vs">suggested<br>match for</div>
+        <div class="pcard-side">
           {% for e in m.Existing_Members %}
-            <div class="member">
-              <span class="platform-badge platform-{{ e.Platform|lower }}">{{ e.Platform }}</span>
-              <a href="{{ e.Permalink }}" target="_blank" rel="noopener">{{ (e.Caption or '(no caption)')[:90] }}</a>
+            <div class="qmember">
+              <span class="badge badge-{{ e.Platform|lower }}">{{ e.Platform }}</span>
+              <a href="{{ e.Permalink }}" target="_blank" rel="noopener" class="cap">{{ (e.Caption or '(no caption)')[:90] }}</a>
             </div>
           {% endfor %}
         </div>
-        <div class="pending-actions">
+        <div class="pcard-actions">
           <form method="post" action="{{ url_for('confirm_pending') }}">
             <input type="hidden" name="group_id" value="{{ m.Group_ID }}">
             <input type="hidden" name="content_id" value="{{ m.Pending_Content_ID }}">
-            <button type="submit" class="accept">Accept</button>
+            <button type="submit" class="btn btn-good btn-sm">Accept</button>
           </form>
           <form method="post" action="{{ url_for('reject_pending') }}">
             <input type="hidden" name="group_id" value="{{ m.Group_ID }}">
             <input type="hidden" name="content_id" value="{{ m.Pending_Content_ID }}">
-            <button type="submit" class="reject">Reject</button>
+            <button type="submit" class="btn btn-danger btn-sm">Reject</button>
           </form>
         </div>
       </div>

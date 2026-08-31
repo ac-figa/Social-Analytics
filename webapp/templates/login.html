@@ -3,18 +3,46 @@
 <head>
   <meta charset="utf-8">
   <title>Social Analytics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  <style>
+    body.db-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card {
+      background: var(--db-surface);
+      border: 1px solid var(--db-line);
+      border-radius: 14px;
+      box-shadow: var(--db-shadow);
+      padding: 40px 36px;
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+      font-family: "Inter", sans-serif;
+    }
+    .login-card h1 { font-family: "Poppins", sans-serif; font-weight: 700; font-size: 20px; margin: 0 0 8px; color: var(--db-ink); }
+    .login-card p { color: var(--db-muted); font-size: 13.5px; margin: 0 0 22px; line-height: 1.5; }
+    .login-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      background: var(--db-accent); color: #fff; text-decoration: none;
+      padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600;
+      font-family: "Inter", sans-serif;
+    }
+    .login-btn:hover { background: var(--db-accent-deep); }
+  </style>
 </head>
-<body>
-  <main class="login-page">
+<body class="db-body">
+  <div class="login-card">
     {% if denied %}
       <h1>Access denied</h1>
-      <p class="subtitle">That Google account isn't on the allowed list for this dashboard.</p>
+      <p>That Google account isn't on the allowed list for this dashboard.</p>
     {% else %}
       <h1>Social Analytics</h1>
-      <p class="subtitle">Sign in with the Google account you use for this project.</p>
+      <p>Sign in with the Google account you use for this project.</p>
     {% endif %}
-    <a class="login-button" href="{{ url_for('login_start') }}">Sign in with Google</a>
-  </main>
+    <a class="login-btn" href="{{ url_for('login_start') }}">Sign in with Google</a>
+  </div>
 </body>
 </html>

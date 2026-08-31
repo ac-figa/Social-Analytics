@@ -43,7 +43,7 @@
 
   btn.addEventListener("click", function () {
     var rows = [];
-    document.querySelectorAll(".queue-row").forEach(function (row) {
+    document.querySelectorAll(".qcard").forEach(function (row) {
       var partnership = row.querySelector(".partnership-input");
       var contentType = row.querySelector(".content-type-input");
       if (!partnership || !partnership.value.trim()) return;

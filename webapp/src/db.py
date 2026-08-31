@@ -289,6 +289,10 @@ def list_pending_matches(client: bigquery.Client, months: int = None) -> list:
     return content_store.list_pending_matches(client, since=since)
 
 
+def get_dashboard_counts(client: bigquery.Client) -> dict:
+    return content_store.get_dashboard_counts(client)
+
+
 def confirm_pending(client: bigquery.Client, group_id: str, content_id: str) -> None:
     """Accepting a pending match only ever flips that one membership's
     Confirmed flag -- but if the group it's joining was already classified

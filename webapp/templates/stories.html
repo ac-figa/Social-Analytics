@@ -1,10 +1,14 @@
-{% extends "base.html" %}
+{% extends "base_shell.html" %}
 {% block title %}Stories{% endblock %}
 {% block content %}
-  <h1>Stories</h1>
-  <p class="subtitle">Instagram/Facebook/TikTok Stories aren't worth pulling from each platform's API (24h lifespan, low volume) -- add them here by hand instead.</p>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Stories</h1>
+      <p class="page-subtitle">Instagram/Facebook/TikTok Stories aren't worth pulling from each platform's API (24h lifespan, low volume) — add them here by hand instead.</p>
+    </div>
+  </div>
 
-  <h2 class="section-title">Add New Stories</h2>
+  <h2 class="mk-section-title">Add New Stories</h2>
   <div class="stories-table-wrap">
     <table class="stories-table">
       <thead>
@@ -28,9 +32,9 @@
     </table>
   </div>
   <div class="stories-add-bar">
-    <button type="button" id="add-story-row-btn">+ Add Row</button>
-    <button type="button" id="submit-stories-btn" data-action="{{ url_for('add_stories') }}">Submit All</button>
-    <span id="submit-stories-status" class="meta"></span>
+    <button type="button" id="add-story-row-btn" class="btn btn-ghost btn-sm">+ Add Row</button>
+    <button type="button" id="submit-stories-btn" class="btn btn-good btn-sm" data-action="{{ url_for('add_stories') }}">Submit All</button>
+    <span id="submit-stories-status" class="page-subtitle" style="margin:0;"></span>
   </div>
 
   <template id="story-row-template">
@@ -58,9 +62,9 @@
     </tr>
   </template>
 
-  <h2 class="section-title">Existing Stories</h2>
+  <h2 class="mk-section-title">Existing Stories</h2>
   {% if not stories %}
-    <p class="empty">No stories added yet.</p>
+    <p class="db-empty">No stories added yet.</p>
   {% else %}
     {% for s in stories %}
       <form id="story-form-{{ loop.index }}" method="post" action="{{ url_for('update_story') }}" class="hidden-story-form">
@@ -112,8 +116,8 @@
                 <datalist id="story-content-types-{{ loop.index }}"></datalist>
               </td>
               <td class="stories-row-actions">
-                <button type="submit" form="story-form-{{ loop.index }}">Save</button>
-                <button type="submit" form="story-delete-{{ loop.index }}" class="delete-btn">Delete</button>
+                <button type="submit" form="story-form-{{ loop.index }}" class="btn btn-primary btn-sm">Save</button>
+                <button type="submit" form="story-delete-{{ loop.index }}" class="btn btn-danger btn-sm">Delete</button>
               </td>
             </tr>
           {% endfor %}
