@@ -1169,6 +1169,42 @@ def set_group_topics(client: bigquery.Client, group_id: str, topics: list) -> No
     ).result()
 
 
+def apply_topic_to_partnership(client: bigquery.Client, partnership: str, topic: str) -> int:
+    """Tags every content_group currently classified under this
+    Partnership with this Topic -- additive, not a replace (unlike
+    set_group_topics(), a video already carrying other Topics keeps
+    them). One INSERT...SELECT with a NOT EXISTS guard so re-running it
+    (or a video that already has the topic) never creates a duplicate
+    (Group_ID, Topic) row -- cheaper and safer than fetching every
+    group's id in Python and looping set_group_topics() once each.
+    Returns how many videos were newly tagged."""
+    topic = topic.strip()
+    if not topic or not partnership:
+        return 0
+    add_topic(client, topic)
+    query = f"""
+    INSERT INTO `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}` (Group_ID, Topic, Created_At)
+    SELECT g.Group_ID, @topic, CURRENT_TIMESTAMP()
+    FROM `{_table_ref(CONTENT_GROUPS_TABLE)}` g
+    WHERE g.Partnership = @partnership
+      AND NOT EXISTS (
+        SELECT 1 FROM `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}` gt
+        WHERE gt.Group_ID = g.Group_ID AND gt.Topic = @topic
+      )
+    """
+    query_job = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("topic", "STRING", topic),
+                bigquery.ScalarQueryParameter("partnership", "STRING", partnership),
+            ]
+        ),
+    )
+    query_job.result()
+    return query_job.num_dml_affected_rows or 0
+
+
 def get_topic_groups(client: bigquery.Client, topic: str) -> list:
     """Every confirmed content_group tagged with this Topic, each with its
     full member list and per-group summed stats -- the topic report

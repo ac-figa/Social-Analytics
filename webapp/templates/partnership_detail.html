@@ -15,6 +15,17 @@
     </div>
   </div>
 
+  {% if report.groups %}
+    <form method="post" action="{{ url_for('apply_topic_to_partnership', partnership=partnership) }}" class="db-inline-form" style="align-items:center;">
+      <span class="page-subtitle" style="margin:0; white-space:nowrap;">Tag every video here with topic:</span>
+      <input type="text" name="topic" list="topics-datalist" placeholder="e.g. Coffee" required class="field-input">
+      <button type="submit" class="btn btn-ghost btn-sm">Apply to All Videos</button>
+    </form>
+    <datalist id="topics-datalist">
+      {% for t in all_topics %}<option value="{{ t }}">{% endfor %}
+    </datalist>
+  {% endif %}
+
   {% if not report.groups and not report.total_stories %}
     <p class="db-empty">No videos or stories classified under this partnership yet.</p>
   {% else %}
