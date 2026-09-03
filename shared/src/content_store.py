@@ -119,6 +119,28 @@ PARTNERSHIP_CONTENT_TYPES_SCHEMA = [
     bigquery.SchemaField("Created_At", "TIMESTAMP"),
 ]
 
+# Topics are a second, independent tag on a content_group -- unlike
+# Partnership (exactly one per group, mirrors a real brand deal) a video
+# can carry zero, one, or several Topics (e.g. "Coffee", "Food",
+# "Soccer"), so this is a many-to-many junction table rather than a
+# column on content_groups. Same share-link pattern as partnerships
+# (Share_Token, generated on demand) so a topic can get its own
+# client-facing report too.
+TOPICS_TABLE = "topics"
+CONTENT_GROUP_TOPICS_TABLE = "content_group_topics"
+
+TOPICS_SCHEMA = [
+    bigquery.SchemaField("Topic", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Created_At", "TIMESTAMP"),
+    bigquery.SchemaField("Share_Token", "STRING"),
+]
+
+CONTENT_GROUP_TOPICS_SCHEMA = [
+    bigquery.SchemaField("Group_ID", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Topic", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Created_At", "TIMESTAMP"),
+]
+
 # Daily follower/subscriber snapshots for the media kit -- one row per
 # account per day, so "latest" is just the newest Snapshot_Date and
 # growth-over-time comes for free. Lives in the shared layer (rather than
@@ -195,6 +217,8 @@ def ensure_schema(client: bigquery.Client) -> None:
         (PARTNERSHIP_CONTENT_TYPES_TABLE, PARTNERSHIP_CONTENT_TYPES_SCHEMA),
         (ACCOUNT_STATS_TABLE, ACCOUNT_STATS_SCHEMA),
         (STORIES_TABLE, STORIES_SCHEMA),
+        (TOPICS_TABLE, TOPICS_SCHEMA),
+        (CONTENT_GROUP_TOPICS_TABLE, CONTENT_GROUP_TOPICS_SCHEMA),
     ):
         table_id = _table_ref(name)
         try:
@@ -1017,6 +1041,208 @@ def get_partnership_groups(client: bigquery.Client, partnership: str) -> list:
         ),
     ).result()
     return [dict(r) for r in rows]
+
+
+def list_topics(client: bigquery.Client) -> list:
+    query = f"SELECT Topic FROM `{_table_ref(TOPICS_TABLE)}` ORDER BY Topic"
+    return [r["Topic"] for r in client.query(query).result()]
+
+
+def add_topic(client: bigquery.Client, topic: str) -> None:
+    topic = topic.strip()
+    if not topic:
+        return
+    query = f"""
+    INSERT INTO `{_table_ref(TOPICS_TABLE)}` (Topic, Created_At)
+    SELECT @topic, CURRENT_TIMESTAMP()
+    FROM (SELECT 1)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM `{_table_ref(TOPICS_TABLE)}` WHERE Topic = @topic
+    )
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("topic", "STRING", topic)]
+        ),
+    ).result()
+
+
+def delete_topic(client: bigquery.Client, topic: str) -> None:
+    """Removes a topic and every video's tag for it -- unlike
+    delete_partnership() (which refuses if still in use), a Topic is a
+    lightweight tag rather than a business relationship, so cascading the
+    delete is the expected behavior: nothing downstream depends on a
+    Topic existing the way a report depends on its Partnership."""
+    client.query(
+        f"DELETE FROM `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}` WHERE Topic = @topic",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("topic", "STRING", topic)]
+        ),
+    ).result()
+    client.query(
+        f"DELETE FROM `{_table_ref(TOPICS_TABLE)}` WHERE Topic = @topic",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("topic", "STRING", topic)]
+        ),
+    ).result()
+
+
+def get_topic_video_counts(client: bigquery.Client) -> dict:
+    query = f"""
+    SELECT Topic, COUNT(DISTINCT Group_ID) AS Video_Count
+    FROM `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}`
+    GROUP BY Topic
+    """
+    return {r["Topic"]: r["Video_Count"] for r in client.query(query).result()}
+
+
+def get_group_topics(client: bigquery.Client, group_id: str) -> list:
+    query = f"SELECT Topic FROM `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}` WHERE Group_ID = @group_id ORDER BY Topic"
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("group_id", "STRING", group_id)]
+        ),
+    ).result()
+    return [r["Topic"] for r in rows]
+
+
+def get_topics_for_groups(client: bigquery.Client, group_ids: list) -> dict:
+    """Batch version of get_group_topics() for a whole page of rows (the
+    Classify queue, Browse) -- one query for every group shown instead of
+    one per row."""
+    group_ids = [g for g in group_ids if g]
+    if not group_ids:
+        return {}
+    query = f"""
+    SELECT Group_ID, Topic FROM `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}`
+    WHERE Group_ID IN UNNEST(@group_ids)
+    ORDER BY Topic
+    """
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ArrayQueryParameter("group_ids", "STRING", group_ids)]
+        ),
+    ).result()
+    result: dict = {}
+    for r in rows:
+        result.setdefault(r["Group_ID"], []).append(r["Topic"])
+    return result
+
+
+def set_group_topics(client: bigquery.Client, group_id: str, topics: list) -> None:
+    """Replaces this group's full Topic set with exactly the ones given
+    (an empty list clears all of them) -- the Classify/Browse "Save"
+    button sends the whole set each time rather than incremental add/
+    remove. Plain parameterized DELETE + INSERT (not insert_rows_json)
+    deliberately: a streaming insert would land the new rows in
+    BigQuery's streaming buffer, which blocks UPDATE/DELETE on them for
+    up to ~90 minutes -- confirmed live (Aug 2026) to break exactly this
+    kind of "edit again shortly after" flow elsewhere in this file (see
+    add_members()). DML INSERT has no such restriction."""
+    topics = sorted({t.strip() for t in topics if t and t.strip()})
+    for t in topics:
+        add_topic(client, t)
+
+    client.query(
+        f"DELETE FROM `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}` WHERE Group_ID = @group_id",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("group_id", "STRING", group_id)]
+        ),
+    ).result()
+    if not topics:
+        return
+    query = f"""
+    INSERT INTO `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}` (Group_ID, Topic, Created_At)
+    SELECT @group_id, topic, CURRENT_TIMESTAMP() FROM UNNEST(@topics) AS topic
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("group_id", "STRING", group_id),
+                bigquery.ArrayQueryParameter("topics", "STRING", topics),
+            ]
+        ),
+    ).result()
+
+
+def get_topic_groups(client: bigquery.Client, topic: str) -> list:
+    """Every confirmed content_group tagged with this Topic, each with its
+    full member list and per-group summed stats -- the topic report
+    page's equivalent of get_partnership_groups()."""
+    query = f"""
+    SELECT
+      g.Group_ID, g.Content_Type,
+      ARRAY_AGG(
+        STRUCT(ci.Content_ID AS Content_ID, ci.Platform AS Platform, ci.Caption AS Caption,
+               ci.Publish_Date AS Publish_Date, ci.Permalink AS Permalink,
+               ci.Views AS Views, ci.Likes AS Likes, ci.Comments AS Comments, ci.Shares AS Shares)
+        ORDER BY ci.Platform
+      ) AS Members,
+      MIN(ci.Publish_Date) AS Publish_Date,
+      SUM(ci.Views) AS Views, SUM(ci.Likes) AS Likes,
+      SUM(ci.Comments) AS Comments, SUM(ci.Shares) AS Shares,
+      MAX(ci.Last_Synced_At) AS Last_Synced_At
+    FROM `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}` gt
+    JOIN `{_table_ref(CONTENT_GROUPS_TABLE)}` g ON gt.Group_ID = g.Group_ID
+    JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m ON g.Group_ID = m.Group_ID AND m.Confirmed = TRUE
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
+    WHERE gt.Topic = @topic
+    GROUP BY g.Group_ID, g.Content_Type
+    ORDER BY Publish_Date DESC
+    """
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("topic", "STRING", topic)]
+        ),
+    ).result()
+    return [dict(r) for r in rows]
+
+
+def get_or_create_topic_share_token(client: bigquery.Client, topic: str) -> str:
+    """Same pattern as get_or_create_share_token() (partnerships) -- see
+    its docstring."""
+    rows = list(
+        client.query(
+            f"SELECT Share_Token FROM `{_table_ref(TOPICS_TABLE)}` WHERE Topic = @topic",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("topic", "STRING", topic)]
+            ),
+        ).result()
+    )
+    existing = rows[0]["Share_Token"] if rows else None
+    if existing:
+        return existing
+
+    token = secrets.token_urlsafe(24)
+    client.query(
+        f"UPDATE `{_table_ref(TOPICS_TABLE)}` SET Share_Token = @token WHERE Topic = @topic",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("token", "STRING", token),
+                bigquery.ScalarQueryParameter("topic", "STRING", topic),
+            ]
+        ),
+    ).result()
+    return token
+
+
+def get_topic_by_share_token(client: bigquery.Client, token: str):
+    """The Topic name for a share-link token, or None -- same fail-closed
+    reasoning as get_partnership_by_share_token()."""
+    rows = list(
+        client.query(
+            f"SELECT Topic FROM `{_table_ref(TOPICS_TABLE)}` WHERE Share_Token = @token",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("token", "STRING", token)]
+            ),
+        ).result()
+    )
+    return rows[0]["Topic"] if rows else None
 
 
 def list_classification_queue(

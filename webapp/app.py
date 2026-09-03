@@ -41,7 +41,7 @@ if _AUTH_ENABLED:
         # public_share is the whole point of this feature: a link brands
         # can open without a Google account on ALLOWED_EMAILS. Everything
         # else on this site still requires internal sign-in.
-        if request.endpoint in ("login", "login_start", "auth_callback", "static", "public_share") or auth.is_logged_in():
+        if request.endpoint in ("login", "login_start", "auth_callback", "static", "public_share", "public_topic_share") or auth.is_logged_in():
             return None
         return redirect(url_for("login"))
 
@@ -88,6 +88,7 @@ def queue():
         groups=groups,
         partnerships=partnerships,
         partnership_content_types=partnership_content_types,
+        all_topics=[t["Topic"] for t in db.list_topics(client)],
         unclassified_only=unclassified_only,
         collabs_only=collabs_only,
         limit=limit,
@@ -114,8 +115,17 @@ def classify():
         content_type = request.form.get("content_type", "").strip() or "Unclassified"
 
     if partnership:
-        db.classify(client, group_id, content_id, platform, platform_post_id, partnership, content_type)
+        group_id = db.classify(client, group_id, content_id, platform, platform_post_id, partnership, content_type)
         db.add_content_type(client, partnership, content_type)
+
+    # Topics only ever tag a real group -- on a still-ungrouped item with
+    # no Partnership given, there's nothing to attach them to yet (see
+    # db.set_group_topics()'s docstring). Classifying it first (even just
+    # as Organic) creates that group; Topics can be added on the next Save.
+    topics_raw = request.form.get("topics")
+    if group_id and topics_raw is not None:
+        topics = [t.strip() for t in topics_raw.split(",") if t.strip()]
+        db.set_group_topics(client, group_id, topics)
 
     return redirect(request.referrer or url_for("queue"))
 
@@ -188,7 +198,9 @@ def delete_partnership():
 def partnership_detail(partnership):
     client = db.get_client()
     report = db.get_partnership_report(client, partnership)
-    return render_template("partnership_detail.html", partnership=partnership, report=report)
+    return render_template(
+        "partnership_detail.html", partnership=partnership, report=report, nav_counts=db.get_dashboard_counts(client)
+    )
 
 
 @app.route("/partnerships/<partnership>/share", methods=["POST"])
@@ -208,6 +220,55 @@ def public_share(token):
         return render_template("share_not_found.html"), 404
     report = db.get_partnership_report(client, partnership)
     return render_template("share.html", partnership=partnership, report=report)
+
+
+@app.route("/topics")
+def topics():
+    client = db.get_client()
+    return render_template("topics.html", topics=db.list_topics(client), nav_counts=db.get_dashboard_counts(client))
+
+
+@app.route("/topics/add", methods=["POST"])
+def add_topic():
+    name = request.form.get("topic", "").strip()
+    if name:
+        db.add_topic(db.get_client(), name)
+    return redirect(url_for("topics"))
+
+
+@app.route("/topics/delete", methods=["POST"])
+def delete_topic():
+    name = request.form.get("topic", "").strip()
+    if name:
+        db.delete_topic(db.get_client(), name)
+        flash(f"Deleted topic '{name}'.", "success")
+    return redirect(url_for("topics"))
+
+
+@app.route("/topics/<topic>")
+def topic_detail(topic):
+    client = db.get_client()
+    report = db.get_topic_report(client, topic)
+    return render_template("topic_detail.html", topic=topic, report=report, nav_counts=db.get_dashboard_counts(client))
+
+
+@app.route("/topics/<topic>/share", methods=["POST"])
+def get_topic_share_link(topic):
+    client = db.get_client()
+    token = db.get_topic_share_token(client, topic)
+    link = url_for("public_topic_share", token=token, _external=True)
+    flash(f'Share link for topic "{topic}" (anyone with this link can view it): {link}', "success")
+    return redirect(url_for("topic_detail", topic=topic))
+
+
+@app.route("/topic-share/<token>")
+def public_topic_share(token):
+    client = db.get_client()
+    topic = db.get_topic_by_share_token(client, token)
+    if topic is None:
+        return render_template("share_not_found.html"), 404
+    report = db.get_topic_report(client, topic)
+    return render_template("topic_share.html", topic=topic, report=report)
 
 
 @app.route("/partnerships/content-types/add", methods=["POST"])
@@ -238,6 +299,7 @@ def browse():
     return render_template(
         "browse.html", items=items, platform=platform, platforms=PLATFORMS, accounts=accounts, account=account,
         partnerships=partnerships, partnership_content_types=partnership_content_types,
+        all_topics=[t["Topic"] for t in db.list_topics(client)],
         nav_counts=db.get_dashboard_counts(client),
     )
 

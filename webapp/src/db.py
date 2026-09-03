@@ -265,15 +265,24 @@ def _member_platform_ids(client: bigquery.Client, group_id: str) -> list:
 
 def list_classification_queue(client: bigquery.Client, unclassified_only: bool = True, collabs_only: bool = False, limit: int = 100) -> list:
     groups = content_store.list_classification_queue(client, unclassified_only=unclassified_only, limit=limit if not collabs_only else 5000)
-    if not collabs_only:
-        return groups[:limit]
+    if collabs_only:
+        collab_ids = _instagram_collab_post_ids(client)
+        groups = [
+            g for g in groups
+            if any(m["Platform"] == "Instagram" and m["Platform_Post_ID"] in collab_ids for m in g["Members"])
+        ]
+    groups = groups[:limit]
+    _attach_topics(client, groups)
+    return groups
 
-    collab_ids = _instagram_collab_post_ids(client)
-    filtered = [
-        g for g in groups
-        if any(m["Platform"] == "Instagram" and m["Platform_Post_ID"] in collab_ids for m in g["Members"])
-    ]
-    return filtered[:limit]
+
+def _attach_topics(client: bigquery.Client, groups: list) -> None:
+    """Mutates groups in place, adding a "Topics" list to each -- shared
+    by the Classify queue and Browse so both can show/edit a video's
+    Topic tags without an extra query per row."""
+    topics_by_group = content_store.get_topics_for_groups(client, [g.get("Group_ID") for g in groups])
+    for g in groups:
+        g["Topics"] = topics_by_group.get(g.get("Group_ID"), [])
 
 
 def _instagram_collab_post_ids(client: bigquery.Client) -> set:
@@ -357,7 +366,9 @@ def list_latest_items(client: bigquery.Client, platform: str, limit: int = 50, a
     if account:
         params.append(bigquery.ScalarQueryParameter("account", "STRING", account))
     rows = client.query(query, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
-    return [dict(r) for r in rows]
+    items = [dict(r) for r in rows]
+    _attach_topics(client, items)
+    return items
 
 
 def list_accounts_for_platform(client: bigquery.Client, platform: str) -> list:
@@ -469,6 +480,70 @@ def get_partnership_report(client: bigquery.Client, partnership: str) -> dict:
         "total_videos": len(groups),
         "total_stories": len(stories),
         "total_posted": len(groups) + len(stories),
+        "total_engagement": totals["Likes"] + totals["Comments"] + totals["Shares"],
+        "totals": totals,
+        "content_type_breakdown": sorted(content_type_counts.items(), key=lambda kv: -kv[1]),
+        "platform_breakdown": sorted(platform_stats.items(), key=lambda kv: kv[0]),
+        "last_updated": last_updated,
+        "last_updated_display": format_last_updated(last_updated),
+    }
+
+
+def list_topics(client: bigquery.Client) -> list:
+    """Every topic with its current video count -- the Topics list page's
+    equivalent of list_partnerships()."""
+    names = content_store.list_topics(client)
+    counts = content_store.get_topic_video_counts(client)
+    return [{"Topic": t, "Video_Count": counts.get(t, 0)} for t in names]
+
+
+def add_topic(client: bigquery.Client, topic: str) -> None:
+    content_store.add_topic(client, topic)
+
+
+def delete_topic(client: bigquery.Client, topic: str) -> None:
+    content_store.delete_topic(client, topic)
+
+
+def get_topic_share_token(client: bigquery.Client, topic: str) -> str:
+    return content_store.get_or_create_topic_share_token(client, topic)
+
+
+def get_topic_by_share_token(client: bigquery.Client, token: str):
+    return content_store.get_topic_by_share_token(client, token)
+
+
+def set_group_topics(client: bigquery.Client, group_id: str, topics: list) -> None:
+    content_store.set_group_topics(client, group_id, topics)
+
+
+def get_topic_report(client: bigquery.Client, topic: str) -> dict:
+    """Same shape as get_partnership_report() minus Stories -- Topics
+    only ever tag videos, not manually-entered Stories (nothing in this
+    session's request asked for that, and it would add a Topic field to
+    every Stories row for a feature nobody uses yet)."""
+    groups = content_store.get_topic_groups(client, topic)
+
+    totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0}
+    content_type_counts: dict = {}
+    platform_stats: dict = {}
+    last_updated = None
+
+    for g in groups:
+        for key in totals:
+            totals[key] += g.get(key) or 0
+        content_type_counts[g["Content_Type"] or "Unclassified"] = content_type_counts.get(g["Content_Type"] or "Unclassified", 0) + 1
+        for m in g["Members"]:
+            stats = platform_stats.setdefault(m["Platform"], {"count": 0, "Views": 0, "Likes": 0, "Comments": 0, "Shares": 0})
+            stats["count"] += 1
+            for key in ("Views", "Likes", "Comments", "Shares"):
+                stats[key] += m.get(key) or 0
+        if g.get("Last_Synced_At") and (last_updated is None or g["Last_Synced_At"] > last_updated):
+            last_updated = g["Last_Synced_At"]
+
+    return {
+        "groups": groups,
+        "total_videos": len(groups),
         "total_engagement": totals["Likes"] + totals["Comments"] + totals["Shares"],
         "totals": totals,
         "content_type_breakdown": sorted(content_type_counts.items(), key=lambda kv: -kv[1]),
