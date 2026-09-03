@@ -123,19 +123,6 @@
   .section-title { font-family: "Anton", "Poppins", sans-serif; font-weight: 400; text-transform: uppercase; letter-spacing: 0.01em; font-size: 24px; margin: 0; }
   .section-count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-  .type-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-  .type-chip {
-    appearance: none; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink-soft);
-    font-family: "Poppins", sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
-    padding: 7px 14px; border-radius: 7px; cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-  }
-  .type-chip:hover { border-color: var(--accent); }
-  .type-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-  .type-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .type-chip .n { color: var(--muted); margin-left: 4px; }
-  .type-chip[aria-pressed="true"] .n { color: rgba(255,255,255,0.7); }
-
   .card-list { display: flex; flex-direction: column; gap: 10px; }
   .piece {
     background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 15px 17px;
@@ -162,8 +149,6 @@
   .piece-stat { text-align: right; min-width: 52px; }
   .piece-stat .v { display: block; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
   .piece-stat .l { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 1px; }
-
-  .piece.is-hidden { display: none; }
 
   @media (max-width: 620px) {
     .headline-stats { grid-template-columns: 1fr; }
@@ -219,18 +204,9 @@
           <span class="section-count" id="video-count">{{ report.total_videos }} video{{ 's' if report.total_videos != 1 else '' }}</span>
         </div>
 
-        {% if report.content_type_breakdown|length > 1 %}
-          <div class="type-filter" id="type-filter" role="group" aria-label="Filter by content type">
-            <button class="type-chip" data-type="__all__" aria-pressed="true">All<span class="n">{{ report.total_videos }}</span></button>
-            {% for content_type, count in report.content_type_breakdown %}
-              <button class="type-chip" data-type="{{ content_type }}" aria-pressed="false">{{ content_type }}<span class="n">{{ count }}</span></button>
-            {% endfor %}
-          </div>
-        {% endif %}
-
         <div class="card-list" id="video-list">
           {% for g in report.groups %}
-            <div class="piece" data-type="{{ g.Content_Type or 'Unclassified' }}">
+            <div class="piece">
               <div class="piece-platform">
                 {% for m in g.Members %}
                   {% if m.Permalink %}
@@ -261,28 +237,5 @@
       Prepared by The Bello Bros. Figures reflect platform-reported totals at the time shown above.
     </footer>
   </div>
-
-  <script>
-    (function () {
-      var chips = document.querySelectorAll('.type-chip');
-      var pieces = document.querySelectorAll('#video-list .piece');
-      var countEl = document.getElementById('video-count');
-
-      chips.forEach(function (chip) {
-        chip.addEventListener('click', function () {
-          chips.forEach(function (c) { c.setAttribute('aria-pressed', 'false'); });
-          chip.setAttribute('aria-pressed', 'true');
-          var type = chip.getAttribute('data-type');
-          var shown = 0;
-          pieces.forEach(function (p) {
-            var match = type === '__all__' || p.getAttribute('data-type') === type;
-            p.classList.toggle('is-hidden', !match);
-            if (match) shown++;
-          });
-          countEl.textContent = shown + (shown === 1 ? ' video' : ' videos');
-        });
-      });
-    })();
-  </script>
 </body>
 </html>
