@@ -199,7 +199,9 @@ def partnership_detail(partnership):
     client = db.get_client()
     report = db.get_partnership_report(client, partnership)
     return render_template(
-        "partnership_detail.html", partnership=partnership, report=report, nav_counts=db.get_dashboard_counts(client)
+        "partnership_detail.html", partnership=partnership, report=report,
+        all_topics=[t["Topic"] for t in db.list_topics(client)],
+        nav_counts=db.get_dashboard_counts(client),
     )
 
 
@@ -209,6 +211,16 @@ def get_share_link(partnership):
     token = db.get_share_token(client, partnership)
     link = url_for("public_share", token=token, _external=True)
     flash(f"Share link for {partnership} (anyone with this link can view it): {link}", "success")
+    return redirect(url_for("partnership_detail", partnership=partnership))
+
+
+@app.route("/partnerships/<partnership>/apply-topic", methods=["POST"])
+def apply_topic_to_partnership(partnership):
+    topic = request.form.get("topic", "").strip()
+    if topic:
+        client = db.get_client()
+        count = db.apply_topic_to_partnership(client, partnership, topic)
+        flash(f'Tagged {count} video(s) in "{partnership}" with topic "{topic}".', "success")
     return redirect(url_for("partnership_detail", partnership=partnership))
 
 

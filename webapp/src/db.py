@@ -517,6 +517,10 @@ def set_group_topics(client: bigquery.Client, group_id: str, topics: list) -> No
     content_store.set_group_topics(client, group_id, topics)
 
 
+def apply_topic_to_partnership(client: bigquery.Client, partnership: str, topic: str) -> int:
+    return content_store.apply_topic_to_partnership(client, partnership, topic)
+
+
 def get_topic_report(client: bigquery.Client, topic: str) -> dict:
     """Same shape as get_partnership_report() minus Stories -- Topics
     only ever tag videos, not manually-entered Stories (nothing in this
