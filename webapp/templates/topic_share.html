@@ -187,13 +187,13 @@
     <h1 class="title">{{ topic }}</h1>
 
     {% if not report.groups %}
-      <p class="empty">Nothing tagged with this topic yet.</p>
+      <p class="empty">Nothing tagged with this topic{{ ' in the last ' + report.months|string + ' months' if report.months else '' }}.</p>
     {% else %}
       <div class="headline-stats">
         <div class="stat-card">
           <p class="stat-label">Videos</p>
           <span class="stat-number">{{ report.total_videos }}</span>
-          <div class="stat-breakdown"><span>tagged "{{ topic }}"</span></div>
+          <div class="stat-breakdown"><span>{{ 'in the last ' + report.months|string + ' months' if report.months else 'all time' }}</span></div>
         </div>
         <div class="stat-card">
           <p class="stat-label">Total Views</p>

@@ -1205,10 +1205,19 @@ def apply_topic_to_partnership(client: bigquery.Client, partnership: str, topic:
     return query_job.num_dml_affected_rows or 0
 
 
-def get_topic_groups(client: bigquery.Client, topic: str) -> list:
+def get_topic_groups(client: bigquery.Client, topic: str, since=None) -> list:
     """Every confirmed content_group tagged with this Topic, each with its
     full member list and per-group summed stats -- the topic report
-    page's equivalent of get_partnership_groups()."""
+    page's equivalent of get_partnership_groups(). since: an optional
+    datetime -- only groups whose earliest member was published on or
+    after this are included. Filtered with HAVING on the aggregated
+    MIN(Publish_Date) rather than a WHERE on ci.Publish_Date directly --
+    a WHERE would drop individual out-of-range *members* row-by-row
+    before grouping, which could leave a group showing only some of the
+    platforms it was actually posted to; HAVING keeps every member of a
+    qualifying group intact and just excludes the group entirely when
+    it's too old."""
+    having_clause = "HAVING MIN(ci.Publish_Date) >= @since" if since is not None else ""
     query = f"""
     SELECT
       g.Group_ID, g.Content_Type,
@@ -1228,14 +1237,13 @@ def get_topic_groups(client: bigquery.Client, topic: str) -> list:
     JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
     WHERE gt.Topic = @topic
     GROUP BY g.Group_ID, g.Content_Type
+    {having_clause}
     ORDER BY Publish_Date DESC
     """
-    rows = client.query(
-        query,
-        job_config=bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("topic", "STRING", topic)]
-        ),
-    ).result()
+    params = [bigquery.ScalarQueryParameter("topic", "STRING", topic)]
+    if since is not None:
+        params.append(bigquery.ScalarQueryParameter("since", "TIMESTAMP", since))
+    rows = client.query(query, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
     return [dict(r) for r in rows]
 
 

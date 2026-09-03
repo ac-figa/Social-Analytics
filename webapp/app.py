@@ -260,8 +260,13 @@ def delete_topic():
 @app.route("/topics/<topic>")
 def topic_detail(topic):
     client = db.get_client()
-    report = db.get_topic_report(client, topic)
-    return render_template("topic_detail.html", topic=topic, report=report, nav_counts=db.get_dashboard_counts(client))
+    months = request.args.get("months", default=12, type=int)
+    if months <= 0:
+        months = None
+    report = db.get_topic_report(client, topic, months=months)
+    return render_template(
+        "topic_detail.html", topic=topic, report=report, months=months, nav_counts=db.get_dashboard_counts(client)
+    )
 
 
 @app.route("/topics/<topic>/share", methods=["POST"])
