@@ -15,11 +15,18 @@
     </div>
   </div>
 
+  <div class="pillbar">
+    {% for m in [3, 6, 9, 12] %}
+      <a class="pill {{ 'is-active' if months == m else '' }}" href="{{ url_for('topic_detail', topic=topic, months=m) }}">Last {{ m }} months</a>
+    {% endfor %}
+    <a class="pill {{ 'is-active' if months is none else '' }}" href="{{ url_for('topic_detail', topic=topic, months=0) }}">All time</a>
+  </div>
+
   {% if not report.groups %}
-    <p class="db-empty">No videos tagged with this topic yet — add it to a video from Classify or Browse.</p>
+    <p class="db-empty">No videos tagged with this topic{{ '' if months is none else ' in this time range' }}{{ '.' if months is none else ' — try "All time".' }}</p>
   {% else %}
     <div class="stat-strip">
-      <div class="stat-chip accent"><span class="n">{{ report.total_videos }}</span><span class="l">video{{ 's' if report.total_videos != 1 else '' }}</span></div>
+      <div class="stat-chip accent"><span class="n">{{ report.total_videos }}</span><span class="l">video{{ 's' if report.total_videos != 1 else '' }}{{ ' in the last ' + report.months|string + ' months' if report.months else '' }}</span></div>
       <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Views) }}</span><span class="l">total views</span></div>
       <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.total_engagement) }}</span><span class="l">total engagement</span></div>
       <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Likes) }}</span><span class="l">likes</span></div>
@@ -28,14 +35,6 @@
     </div>
 
     <div class="breakdown-row">
-      <div class="breakdown-card">
-        <h3>By Content Type</h3>
-        <ul class="breakdown-list">
-          {% for content_type, count in report.content_type_breakdown %}
-            <li><span>{{ content_type }}</span><span class="breakdown-count">{{ count }}</span></li>
-          {% endfor %}
-        </ul>
-      </div>
       <div class="breakdown-card">
         <h3>By Platform</h3>
         <ul class="breakdown-list">

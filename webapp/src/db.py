@@ -521,12 +521,20 @@ def apply_topic_to_partnership(client: bigquery.Client, partnership: str, topic:
     return content_store.apply_topic_to_partnership(client, partnership, topic)
 
 
-def get_topic_report(client: bigquery.Client, topic: str) -> dict:
+def get_topic_report(client: bigquery.Client, topic: str, months: int = 12) -> dict:
     """Same shape as get_partnership_report() minus Stories -- Topics
     only ever tag videos, not manually-entered Stories (nothing in this
     session's request asked for that, and it would add a Topic field to
-    every Stories row for a feature nobody uses yet)."""
-    groups = content_store.get_topic_groups(client, topic)
+    every Stories row for a feature nobody uses yet). months: only
+    videos published in the last N months are included (None = all
+    time) -- defaults to 12, since that's the window these reports are
+    normally run for; see content_store.get_topic_groups()'s docstring
+    for why this is a HAVING filter on the group's earliest member, not
+    a WHERE on every row."""
+    since = None
+    if months is not None:
+        since = datetime.now(timezone.utc) - timedelta(days=months * 30)
+    groups = content_store.get_topic_groups(client, topic, since=since)
 
     totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0}
     content_type_counts: dict = {}
@@ -554,6 +562,7 @@ def get_topic_report(client: bigquery.Client, topic: str) -> dict:
         "platform_breakdown": sorted(platform_stats.items(), key=lambda kv: kv[0]),
         "last_updated": last_updated,
         "last_updated_display": format_last_updated(last_updated),
+        "months": months,
     }
 
 
