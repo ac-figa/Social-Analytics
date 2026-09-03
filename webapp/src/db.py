@@ -537,14 +537,12 @@ def get_topic_report(client: bigquery.Client, topic: str, months: int = 12) -> d
     groups = content_store.get_topic_groups(client, topic, since=since)
 
     totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0}
-    content_type_counts: dict = {}
     platform_stats: dict = {}
     last_updated = None
 
     for g in groups:
         for key in totals:
             totals[key] += g.get(key) or 0
-        content_type_counts[g["Content_Type"] or "Unclassified"] = content_type_counts.get(g["Content_Type"] or "Unclassified", 0) + 1
         for m in g["Members"]:
             stats = platform_stats.setdefault(m["Platform"], {"count": 0, "Views": 0, "Likes": 0, "Comments": 0, "Shares": 0})
             stats["count"] += 1
@@ -558,7 +556,6 @@ def get_topic_report(client: bigquery.Client, topic: str, months: int = 12) -> d
         "total_videos": len(groups),
         "total_engagement": totals["Likes"] + totals["Comments"] + totals["Shares"],
         "totals": totals,
-        "content_type_breakdown": sorted(content_type_counts.items(), key=lambda kv: -kv[1]),
         "platform_breakdown": sorted(platform_stats.items(), key=lambda kv: kv[0]),
         "last_updated": last_updated,
         "last_updated_display": format_last_updated(last_updated),
