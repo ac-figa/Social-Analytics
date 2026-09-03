@@ -1,0 +1,80 @@
+{% extends "base_shell.html" %}
+{% block title %}{{ topic }}{% endblock %}
+{% block content %}
+  <p class="page-subtitle" style="margin-bottom:6px;"><a href="{{ url_for('topics') }}">&larr; All topics</a></p>
+
+  <div class="report-header">
+    <h1 class="page-title" style="margin:0;">{{ topic }}</h1>
+    <div style="display:flex; align-items:center; gap:14px;">
+      {% if report.groups %}
+        <span class="report-updated"><span class="report-updated-dot"></span>Updated <strong>{{ report.last_updated_display }}</strong></span>
+      {% endif %}
+      <form method="post" action="{{ url_for('get_topic_share_link', topic=topic) }}">
+        <button type="submit" class="btn btn-primary btn-sm">Get Share Link</button>
+      </form>
+    </div>
+  </div>
+
+  {% if not report.groups %}
+    <p class="db-empty">No videos tagged with this topic yet — add it to a video from Classify or Browse.</p>
+  {% else %}
+    <div class="stat-strip">
+      <div class="stat-chip accent"><span class="n">{{ report.total_videos }}</span><span class="l">video{{ 's' if report.total_videos != 1 else '' }}</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Views) }}</span><span class="l">total views</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.total_engagement) }}</span><span class="l">total engagement</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Likes) }}</span><span class="l">likes</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Comments) }}</span><span class="l">comments</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Shares) }}</span><span class="l">shares</span></div>
+    </div>
+
+    <div class="breakdown-row">
+      <div class="breakdown-card">
+        <h3>By Content Type</h3>
+        <ul class="breakdown-list">
+          {% for content_type, count in report.content_type_breakdown %}
+            <li><span>{{ content_type }}</span><span class="breakdown-count">{{ count }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="breakdown-card">
+        <h3>By Platform</h3>
+        <ul class="breakdown-list">
+          {% for platform, stats in report.platform_breakdown %}
+            <li>
+              <span class="badge badge-{{ platform|lower }}">{{ platform }}</span>
+              <span>{{ stats.count }} video(s) &middot; {{ '{:,}'.format(stats.Views) }} views</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <h2 class="mk-section-title">Videos</h2>
+    <div class="vcard-list">
+      {% for g in report.groups %}
+        <div class="vcard">
+          <div class="vcard-platforms">
+            {% for m in g.Members %}
+              {% if m.Permalink %}
+                <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="badge badge-{{ m.Platform|lower }}">{{ m.Platform }}</a>
+              {% else %}
+                <span class="badge badge-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+              {% endif %}
+            {% endfor %}
+            <span class="vcard-date">{{ g.Publish_Date.strftime('%Y-%m-%d') if g.Publish_Date else '' }}</span>
+          </div>
+          <div class="vcard-body">
+            <span class="vcard-caption">{{ (g.Members[0].Caption or '(no caption)') }}</span>
+            <div class="vcard-type">{{ g.Content_Type or 'Unclassified' }}</div>
+          </div>
+          <div class="vcard-stats">
+            <div class="vcard-stat"><span class="v">{{ '{:,}'.format(g.Views or 0) }}</span><span class="l">Views</span></div>
+            <div class="vcard-stat"><span class="v">{{ '{:,}'.format(g.Likes or 0) }}</span><span class="l">Likes</span></div>
+            <div class="vcard-stat"><span class="v">{{ '{:,}'.format(g.Comments or 0) }}</span><span class="l">Comments</span></div>
+            <div class="vcard-stat"><span class="v">{{ '{:,}'.format(g.Shares or 0) }}</span><span class="l">Shares</span></div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

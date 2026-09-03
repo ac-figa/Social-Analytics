@@ -78,6 +78,7 @@
                   <input type="text" name="partnership" list="partnerships-datalist" placeholder="Partnership" class="field-input partnership-input" value="{{ item.Partnership if item.Partnership and item.Partnership != 'Unclassified' else '' }}">
                   <input type="text" name="content_type" list="browse-content-types-{{ loop.index }}" placeholder="Content Type" class="field-input content-type-input" value="{{ item.Content_Type if item.Content_Type and item.Content_Type != 'Unclassified' else '' }}">
                   <datalist id="browse-content-types-{{ loop.index }}"></datalist>
+                  <input type="text" name="topics" list="topics-datalist" placeholder="Topics" class="field-input topics-input" value="{{ item.Topics|join(', ') }}" title="{{ 'Classify this video first (even as Organic) before adding topics' if not item.Group_ID else '' }}">
                   <button type="submit" class="btn btn-primary btn-sm">Save</button>
                   <button type="submit" name="action" value="organic" formnovalidate class="btn btn-ghost btn-sm">Organic</button>
                 </form>
@@ -93,6 +94,10 @@
 
   <datalist id="partnerships-datalist">
     {% for p in partnerships %}<option value="{{ p.Partnership }}">{% endfor %}
+  </datalist>
+
+  <datalist id="topics-datalist">
+    {% for t in all_topics %}<option value="{{ t }}">{% endfor %}
   </datalist>
 
   <script id="partnerships-data" type="application/json">

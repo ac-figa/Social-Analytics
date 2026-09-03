@@ -1,0 +1,34 @@
+{% extends "base_shell.html" %}
+{% block title %}Topics{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Topics</h1>
+      <p class="page-subtitle">Cross-cutting tags like Coffee, Fashion, or Soccer — a video can carry none, one, or several. Tag videos from Classify or Browse; click a topic below for its own report and share link.</p>
+    </div>
+  </div>
+
+  <form class="db-inline-form" method="post" action="{{ url_for('add_topic') }}">
+    <input type="text" name="topic" placeholder="New topic name (e.g. Coffee)" required class="field-input field-input-wide">
+    <button type="submit" class="btn btn-primary">Add Topic</button>
+  </form>
+
+  <div class="plist">
+    {% for t in topics %}
+      <div class="pnr-card">
+        <div class="pnr-card-header">
+          <h2><a href="{{ url_for('topic_detail', topic=t.Topic) }}">{{ t.Topic }}</a></h2>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pnr-count {{ 'is-empty' if t.Video_Count == 0 else '' }}">{{ t.Video_Count }} video{{ '' if t.Video_Count == 1 else 's' }}</span>
+            <form method="post" action="{{ url_for('delete_topic') }}" onsubmit="return confirm('Delete topic {{ t.Topic }}? This removes it from every video it\'s tagged on.');">
+              <input type="hidden" name="topic" value="{{ t.Topic }}">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <p class="db-empty">No topics yet — add one above, then tag videos with it from Classify or Browse.</p>
+    {% endfor %}
+  </div>
+{% endblock %}

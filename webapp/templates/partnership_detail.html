@@ -1,53 +1,33 @@
-{% extends "base.html" %}
+{% extends "base_shell.html" %}
 {% block title %}{{ partnership }}{% endblock %}
 {% block content %}
-  <p class="subtitle"><a href="{{ url_for('partnerships') }}">&larr; All partnerships</a></p>
-  <div class="partnership-detail-header">
-    <h1>{{ partnership }}</h1>
-    <form method="post" action="{{ url_for('get_share_link', partnership=partnership) }}">
-      <button type="submit">Get Share Link</button>
-    </form>
+  <p class="page-subtitle" style="margin-bottom:6px;"><a href="{{ url_for('partnerships') }}">&larr; All partnerships</a></p>
+
+  <div class="report-header">
+    <h1 class="page-title" style="margin:0;">{{ partnership }}</h1>
+    <div style="display:flex; align-items:center; gap:14px;">
+      {% if report.groups or report.total_stories %}
+        <span class="report-updated"><span class="report-updated-dot"></span>Updated <strong>{{ report.last_updated_display }}</strong></span>
+      {% endif %}
+      <form method="post" action="{{ url_for('get_share_link', partnership=partnership) }}">
+        <button type="submit" class="btn btn-primary btn-sm">Get Share Link</button>
+      </form>
+    </div>
   </div>
 
   {% if not report.groups and not report.total_stories %}
-    <p class="empty">No videos or stories classified under this partnership yet.</p>
+    <p class="db-empty">No videos or stories classified under this partnership yet.</p>
   {% else %}
-    <div class="stat-tiles">
-      <div class="stat-tile">
-        <span class="stat-value">{{ report.total_videos }}</span>
-        <span class="stat-label">Videos posted</span>
-      </div>
+    <div class="stat-strip">
+      <div class="stat-chip accent"><span class="n">{{ report.total_posted }}</span><span class="l">posted{{ ' (' + report.total_videos|string + ' videos, ' + report.total_stories|string + ' stories)' if report.total_stories else '' }}</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Views) }}</span><span class="l">total views</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.total_engagement) }}</span><span class="l">total engagement</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Likes) }}</span><span class="l">likes</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Comments) }}</span><span class="l">comments</span></div>
+      <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Shares) }}</span><span class="l">shares</span></div>
       {% if report.total_stories %}
-        <div class="stat-tile">
-          <span class="stat-value">{{ report.total_stories }}</span>
-          <span class="stat-label">Stories posted</span>
-        </div>
-      {% endif %}
-      <div class="stat-tile">
-        <span class="stat-value">{{ '{:,}'.format(report.totals.Views) }}</span>
-        <span class="stat-label">Total Views</span>
-      </div>
-      <div class="stat-tile">
-        <span class="stat-value">{{ '{:,}'.format(report.totals.Likes) }}</span>
-        <span class="stat-label">Total Likes</span>
-      </div>
-      <div class="stat-tile">
-        <span class="stat-value">{{ '{:,}'.format(report.totals.Comments) }}</span>
-        <span class="stat-label">Total Comments</span>
-      </div>
-      <div class="stat-tile">
-        <span class="stat-value">{{ '{:,}'.format(report.totals.Shares) }}</span>
-        <span class="stat-label">Total Shares</span>
-      </div>
-      {% if report.total_stories %}
-        <div class="stat-tile">
-          <span class="stat-value">{{ '{:,}'.format(report.totals.Sticker_Taps) }}</span>
-          <span class="stat-label">Sticker Taps</span>
-        </div>
-        <div class="stat-tile">
-          <span class="stat-value">{{ '{:,}'.format(report.totals.Replies) }}</span>
-          <span class="stat-label">Story Replies</span>
-        </div>
+        <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Sticker_Taps) }}</span><span class="l">sticker taps</span></div>
+        <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Replies) }}</span><span class="l">story replies</span></div>
       {% endif %}
     </div>
 
@@ -65,7 +45,7 @@
         <ul class="breakdown-list">
           {% for platform, stats in report.platform_breakdown %}
             <li>
-              <span class="platform-badge platform-{{ platform|lower }}">{{ platform }}</span>
+              <span class="badge badge-{{ platform|lower }}">{{ platform }}</span>
               <span>{{ stats.count }} video(s) &middot; {{ '{:,}'.format(stats.Views) }} views</span>
             </li>
           {% endfor %}
@@ -74,33 +54,56 @@
     </div>
 
     {% if report.groups %}
-    <h2 class="section-title">Videos</h2>
-    <div class="queue">
-      {% for g in report.groups %}
-        <div class="queue-row partnership-video-row">
-          <span class="content-type-badge">{{ g.Content_Type or 'Unclassified' }}</span>
-          <div class="members">
-            {% for m in g.Members %}
-              <div class="member">
+      <h2 class="mk-section-title">Videos</h2>
+      <div class="vcard-list">
+        {% for g in report.groups %}
+          <div class="vcard">
+            <div class="vcard-platforms">
+              {% for m in g.Members %}
                 {% if m.Permalink %}
-                  <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</a>
+                  <a href="{{ m.Permalink }}" target="_blank" rel="noopener" class="badge badge-{{ m.Platform|lower }}">{{ m.Platform }}</a>
                 {% else %}
-                  <span class="platform-badge platform-{{ m.Platform|lower }}">{{ m.Platform }}</span>
+                  <span class="badge badge-{{ m.Platform|lower }}">{{ m.Platform }}</span>
                 {% endif %}
-                <span class="caption">{{ (m.Caption or '(no caption)')[:80] }}</span>
-                <span class="meta">{{ m.Publish_Date.strftime('%Y-%m-%d') if m.Publish_Date else '' }} &middot; {{ '{:,}'.format(m.Views) if m.Views is not none else '?' }} views</span>
-              </div>
-            {% endfor %}
+              {% endfor %}
+              <span class="vcard-date">{{ g.Publish_Date.strftime('%Y-%m-%d') if g.Publish_Date else '' }}</span>
+            </div>
+            <div class="vcard-body">
+              <span class="vcard-caption">{{ (g.Members[0].Caption or '(no caption)') }}</span>
+              <div class="vcard-type">{{ g.Content_Type or 'Unclassified' }}</div>
+            </div>
+            <div class="vcard-stats">
+              <div class="vcard-stat"><span class="v">{{ '{:,}'.format(g.Views or 0) }}</span><span class="l">Views</span></div>
+              <div class="vcard-stat"><span class="v">{{ '{:,}'.format(g.Likes or 0) }}</span><span class="l">Likes</span></div>
+              <div class="vcard-stat"><span class="v">{{ '{:,}'.format(g.Comments or 0) }}</span><span class="l">Comments</span></div>
+              <div class="vcard-stat"><span class="v">{{ '{:,}'.format(g.Shares or 0) }}</span><span class="l">Shares</span></div>
+            </div>
           </div>
-          <div class="group-stats">
-            <span>{{ '{:,}'.format(g.Views or 0) }} views</span>
-            <span>{{ '{:,}'.format(g.Likes or 0) }} likes</span>
-            <span>{{ '{:,}'.format(g.Comments or 0) }} comments</span>
-            <span>{{ '{:,}'.format(g.Shares or 0) }} shares</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if report.stories %}
+      <h2 class="mk-section-title" style="margin-top:26px;">Stories</h2>
+      <div class="vcard-list">
+        {% for s in report.stories %}
+          <div class="vcard">
+            <div class="vcard-platforms">
+              <span class="badge badge-{{ (s.Platform or '')|lower }}">{{ s.Platform }}</span>
+              <span class="vcard-date">{{ s.Publish_Date.strftime('%Y-%m-%d') if s.Publish_Date else '' }}</span>
+            </div>
+            <div class="vcard-body">
+              <span class="vcard-caption">{{ s.Caption or '(no caption)' }}</span>
+              <div class="vcard-type">{{ s.Content_Type or 'Unclassified' }}</div>
+            </div>
+            <div class="vcard-stats">
+              <div class="vcard-stat"><span class="v">{{ '{:,}'.format(s.Views or 0) }}</span><span class="l">Views</span></div>
+              <div class="vcard-stat"><span class="v">{{ '{:,}'.format(s.Sticker_Taps or 0) }}</span><span class="l">Taps</span></div>
+              <div class="vcard-stat"><span class="v">{{ '{:,}'.format(s.Replies or 0) }}</span><span class="l">Replies</span></div>
+            </div>
           </div>
-        </div>
-      {% endfor %}
-    </div>
+        {% endfor %}
+      </div>
     {% endif %}
   {% endif %}
 {% endblock %}
