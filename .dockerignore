@@ -1,0 +1,13 @@
+# Docker's COPY does not respect .gitignore -- only this file. Without
+# it, "COPY webapp/ webapp/" (or any pipeline directory) bakes in
+# whatever's actually on disk at build time, .env files included, no
+# matter what git considers tracked. Every real credential file lives
+# in Secret Manager (webapp) or is fetched by syncjob's own code at
+# runtime -- none of them belong inside an image layer.
+.git
+**/__pycache__
+**/*.pyc
+.venv
+venv
+**/.env
+**/.env.*
