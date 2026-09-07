@@ -1485,6 +1485,7 @@ def get_export_groups(
     since=None,
     until=None,
     platforms: list = None,
+    accounts: list = None,
     partnerships: list = None,
     topics: list = None,
 ) -> list:
@@ -1494,13 +1495,13 @@ def get_export_groups(
     stats. since/until bound a group's earliest Publish_Date via HAVING, not
     WHERE (see get_topic_groups()'s docstring: a WHERE would drop individual
     out-of-range *members* row-by-row before grouping, leaving a group
-    showing only some of the platforms it actually posted to). platforms
-    filters to groups with at least one member on one of those platforms --
-    a WHERE here is fine since it only decides whether to include the group
-    at all, and doesn't touch which members come back in Members (a group
-    matched because it has a TikTok member still returns its Instagram
-    member too, for accurate per-group totals). partnerships/topics are
-    ANY-match lists."""
+    showing only some of the platforms it actually posted to). platforms/
+    accounts filter to groups with at least one member on one of those
+    platforms/accounts -- a WHERE here is fine since it only decides whether
+    to include the group at all, and doesn't touch which members come back
+    in Members (a group matched because it has a TikTok member still
+    returns its Instagram member too, for accurate per-group totals).
+    partnerships/topics are ANY-match lists."""
     where_clauses = []
     params = []
     if platforms:
@@ -1512,6 +1513,15 @@ def get_export_groups(
           )
         """)
         params.append(bigquery.ArrayQueryParameter("platforms", "STRING", platforms))
+    if accounts:
+        where_clauses.append(f"""
+          g.Group_ID IN (
+            SELECT m3.Group_ID FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m3
+            JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci3 ON m3.Content_ID = ci3.Content_ID
+            WHERE m3.Confirmed = TRUE AND ci3.Account_Username IN UNNEST(@accounts)
+          )
+        """)
+        params.append(bigquery.ArrayQueryParameter("accounts", "STRING", accounts))
     if partnerships:
         where_clauses.append("g.Partnership IN UNNEST(@partnerships)")
         params.append(bigquery.ArrayQueryParameter("partnerships", "STRING", partnerships))

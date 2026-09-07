@@ -563,7 +563,20 @@ def get_topic_report(client: bigquery.Client, topic: str, months: int = 12) -> d
     }
 
 
-_EXPORT_GROUP_BY_OPTIONS = ("none", "platform", "brand", "partnership", "topic")
+_EXPORT_GROUP_BY_OPTIONS = ("none", "platform", "brand", "account", "partnership", "topic")
+
+
+def list_all_accounts(client: bigquery.Client) -> list:
+    """Every (Platform, Account_Username) that's ever posted a synced
+    snapshot -- the Export builder's Account filter/dropdown. Reuses
+    account_stats rather than a distinct scan over content_items since
+    it's already the smaller, indexed-by-nothing-but-cheap table the
+    Media Kit reads from."""
+    accounts = content_store.get_latest_account_stats(client)
+    return sorted(
+        ({"Platform": a["Platform"], "Account_Username": a["Account_Username"]} for a in accounts),
+        key=lambda a: (a["Platform"], a["Account_Username"]),
+    )
 
 
 def get_export_report(
@@ -571,21 +584,25 @@ def get_export_report(
     since=None,
     until=None,
     platforms: list = None,
+    accounts: list = None,
     partnerships: list = None,
     topics: list = None,
     brand: str = None,
     group_by: str = "none",
 ) -> dict:
     """Export builder's data: totals plus an optional breakdown table, for
-    whatever combination of date range / platform / brand / partnership /
-    topic filters the user picked. Followers is a live snapshot (not
-    date-ranged -- "how many followers do I have" is always a right-now
-    question), everything else is summed from groups matching the filters.
-    Mirrors get_partnership_report()/get_topic_report()'s totals shape but
-    generalized across every axis instead of being pinned to one
-    partnership or topic."""
+    whatever combination of date range / platform / account / brand /
+    partnership / topic filters the user picked. Followers is a live
+    snapshot (not date-ranged -- "how many followers do I have" is always
+    a right-now question), everything else is summed from groups matching
+    the filters. Mirrors get_partnership_report()/get_topic_report()'s
+    totals shape but generalized across every axis instead of being pinned
+    to one partnership or topic. accounts: optional list of Account_
+    Username values (see list_all_accounts()) to filter to specific
+    accounts regardless of brand/platform."""
     groups = content_store.get_export_groups(
-        client, since=since, until=until, platforms=platforms, partnerships=partnerships, topics=topics
+        client, since=since, until=until, platforms=platforms, accounts=accounts,
+        partnerships=partnerships, topics=topics,
     )
     group_ids = [g["Group_ID"] for g in groups]
     topics_by_group = content_store.get_topics_for_groups(client, group_ids) if group_ids else {}
@@ -598,13 +615,15 @@ def get_export_report(
     if brand:
         groups = [g for g in groups if g["Brand"] == brand]
 
-    accounts = content_store.get_latest_account_stats(client)
-    for a in accounts:
+    account_stats = content_store.get_latest_account_stats(client)
+    for a in account_stats:
         a["Brand"] = _account_brand(a["Account_Username"])
     if platforms:
-        accounts = [a for a in accounts if a["Platform"] in platforms]
+        account_stats = [a for a in account_stats if a["Platform"] in platforms]
+    if accounts:
+        account_stats = [a for a in account_stats if a["Account_Username"] in accounts]
     if brand:
-        accounts = [a for a in accounts if a["Brand"] == brand]
+        account_stats = [a for a in account_stats if a["Brand"] == brand]
 
     totals = {
         "Post_Count": len(groups),
@@ -612,22 +631,22 @@ def get_export_report(
         "Likes": sum(g.get("Likes") or 0 for g in groups),
         "Comments": sum(g.get("Comments") or 0 for g in groups),
         "Shares": sum(g.get("Shares") or 0 for g in groups),
-        "Followers": sum(a.get("Followers") or 0 for a in accounts),
+        "Followers": sum(a.get("Followers") or 0 for a in account_stats),
     }
 
     if group_by not in _EXPORT_GROUP_BY_OPTIONS:
         group_by = "none"
-    breakdown = _build_export_breakdown(groups, accounts, group_by)
+    breakdown = _build_export_breakdown(groups, account_stats, group_by)
 
     return {"groups": groups, "totals": totals, "breakdown": breakdown, "group_by": group_by}
 
 
 def _build_export_breakdown(groups: list, accounts: list, group_by: str) -> list:
-    """Buckets groups (and, for platform/brand, accounts too -- for the
-    Followers column) by the chosen dimension. Topic buckets can double-
-    count a video's stats across each topic it carries, same as the topic
-    report's own totals -- that's correct, not a bug: a video tagged both
-    Coffee and Food really did contribute its views to both stories."""
+    """Buckets groups (and, for platform/brand/account, accounts too -- for
+    the Followers column) by the chosen dimension. Topic buckets can
+    double-count a video's stats across each topic it carries, same as the
+    topic report's own totals -- that's correct, not a bug: a video tagged
+    both Coffee and Food really did contribute its views to both stories."""
     if group_by == "none":
         return []
 
@@ -647,6 +666,16 @@ def _build_export_breakdown(groups: list, accounts: list, group_by: str) -> list
                 b["_group_ids"].add(g["Group_ID"])
         for a in accounts:
             bucket(a["Platform"])["Followers"] += a.get("Followers") or 0
+    elif group_by == "account":
+        for g in groups:
+            for m in g["Members"]:
+                label = m.get("Account_Username") or "(Unknown Account)"
+                b = bucket(label)
+                for key in ("Views", "Likes", "Comments", "Shares"):
+                    b[key] += m.get(key) or 0
+                b["_group_ids"].add(g["Group_ID"])
+        for a in accounts:
+            bucket(a["Account_Username"])["Followers"] += a.get("Followers") or 0
     elif group_by == "brand":
         for g in groups:
             b = bucket(g["Brand"])
