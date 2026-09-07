@@ -957,6 +957,66 @@ def delete_media_kit_report(client: bigquery.Client, report_id: str) -> None:
     content_store.delete_media_kit_report(client, report_id)
 
 
+_PARTNERSHIP_HIGHLIGHT_WINDOW_DAYS = 90
+_PARTNERSHIP_HIGHLIGHT_MAX_VIDEOS = 3
+
+
+def _summarize_partnership_recent(pr: dict, days: int = _PARTNERSHIP_HIGHLIGHT_WINDOW_DAYS) -> dict:
+    """Recomputes get_partnership_report()'s totals/counts scoped to the
+    last N days, from its already-fetched groups/stories lists, rather
+    than re-querying BigQuery with a date filter -- this is only for the
+    Media Kit Report's "Partnership Highlights" cards (whose caption
+    promises "the past 90 days"), so the internal partnership page and
+    its own public share link keep showing all-time totals, unaffected.
+    Also picks up to _PARTNERSHIP_HIGHLIGHT_MAX_VIDEOS best-performing
+    (by Views) pieces from the window that have an Instagram permalink --
+    Instagram Reels are the most presentable format to hand a brand, so
+    a group with no Instagram version is skipped rather than falling
+    back to another platform's link."""
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_date = cutoff_dt.date()
+
+    def _group_in_window(g):
+        dt = g.get("Publish_Date")
+        if dt is None:
+            return False
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt >= cutoff_dt
+
+    def _story_in_window(s):
+        d = s.get("Publish_Date")
+        return d is not None and d >= cutoff_date
+
+    groups = [g for g in pr["groups"] if _group_in_window(g)]
+    stories = [s for s in pr["stories"] if _story_in_window(s)]
+
+    totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0}
+    platform_counts: dict = {}
+    for g in groups:
+        for key in totals:
+            totals[key] += g.get(key) or 0
+        for m in g["Members"]:
+            platform_counts[m["Platform"]] = platform_counts.get(m["Platform"], 0) + 1
+    for s in stories:
+        for key in ("Views", "Likes", "Shares"):
+            totals[key] += s.get(key) or 0
+
+    ig_candidates = []
+    for g in groups:
+        ig_member = next((m for m in g["Members"] if m["Platform"] == "Instagram" and m.get("Permalink")), None)
+        if ig_member:
+            ig_candidates.append({"permalink": ig_member["Permalink"], "views": g.get("Views") or 0})
+    ig_candidates.sort(key=lambda v: -v["views"])
+
+    return {
+        "total_posted": len(groups) + len(stories),
+        "totals": totals,
+        "platform_breakdown": sorted(platform_counts.items(), key=lambda kv: kv[0]),
+        "top_videos": ig_candidates[:_PARTNERSHIP_HIGHLIGHT_MAX_VIDEOS],
+    }
+
+
 def get_media_kit_report_data(client: bigquery.Client, token: str):
     """Builds the public Media Kit Report page's data from a saved
     config (see content_store.create_media_kit_report()): current stats
@@ -995,7 +1055,10 @@ def get_media_kit_report_data(client: bigquery.Client, token: str):
         for days in windows:
             totals[f"Views_{days}d"] += a.get(f"Views_{days}d") or 0
 
-    partnerships = [{"Partnership": p, **get_partnership_report(client, p)} for p in report["Partnerships"]]
+    partnerships = [
+        {"Partnership": p, **_summarize_partnership_recent(get_partnership_report(client, p))}
+        for p in report["Partnerships"]
+    ]
 
     return {
         "recipient_name": report["Recipient_Name"],
@@ -1004,6 +1067,7 @@ def get_media_kit_report_data(client: bigquery.Client, token: str):
         "totals": totals,
         "metrics": set(report["Metrics"]),
         "partnerships": partnerships,
+        "partnership_window_days": _PARTNERSHIP_HIGHLIGHT_WINDOW_DAYS,
         "created_at": report["Created_At"],
         "created_display": format_last_updated(report["Created_At"]),
     }
