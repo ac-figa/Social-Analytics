@@ -522,6 +522,13 @@ table.dtable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .mk-geo-list .pct { color: var(--db-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .mk-demo-empty { font-size: 11px; color: var(--db-muted); font-style: italic; }
 
+.mk-demo-upload { margin-top: 10px; }
+.mk-demo-upload-label { display: inline-flex; }
+.mk-demo-upload-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+.mk-demo-upload-btn { cursor: pointer; }
+.mk-demo-upload-btn.is-busy { opacity: 0.6; pointer-events: none; }
+.mk-demo-upload-hint { font-size: 10.5px; color: var(--db-muted); margin: 4px 0 0; }
+
 /* ---------- sync ---------- */
 .db-sync-status { margin-top: 20px; }
 .db-sync-log {

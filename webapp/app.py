@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from src import config, db, sync
+from src import config, db, sync, vision
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
@@ -358,8 +358,39 @@ def media_kit():
         totals=media_kit_data["totals"],
         brands=media_kit_data["brands"],
         brand=brand,
+        demographics_upload_available=bool(config.ANTHROPIC_API_KEY),
         nav_counts=db.get_dashboard_counts(client),
     )
+
+
+_DEMOGRAPHICS_UPLOAD_MEDIA_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+@app.route("/media-kit/demographics/upload", methods=["POST"])
+def upload_demographics_screenshot():
+    if not config.ANTHROPIC_API_KEY:
+        flash("Screenshot uploads aren't configured on this deployment (missing ANTHROPIC_API_KEY).", "error")
+        return redirect(url_for("media_kit"))
+
+    platform = request.form.get("platform", "").strip()
+    account_username = request.form.get("account_username", "").strip()
+    file = request.files.get("screenshot")
+    if not platform or not account_username or not file or not file.filename:
+        flash("Missing platform, account, or screenshot file.", "error")
+        return redirect(url_for("media_kit"))
+    if file.mimetype not in _DEMOGRAPHICS_UPLOAD_MEDIA_TYPES:
+        flash(f"Unsupported image type: {file.mimetype}. Use PNG, JPEG, WebP, or GIF.", "error")
+        return redirect(url_for("media_kit"))
+
+    try:
+        summary = db.record_demographics_from_screenshot(
+            db.get_client(), platform, account_username, file.read(), file.mimetype
+        )
+        flash(summary, "success")
+    except vision.VisionParseError as e:
+        flash(f"Couldn't read that screenshot: {e}", "error")
+
+    return redirect(url_for("media_kit"))
 
 
 _EXPORT_BRANDS = ("Bello Bros", "Calcio Bros")

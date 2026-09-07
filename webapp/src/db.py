@@ -19,6 +19,8 @@ from google.cloud import bigquery  # noqa: E402
 
 from shared.src import content_store  # noqa: E402
 
+from . import vision
+
 _REPORT_TZ = ZoneInfo("America/Toronto")
 
 
@@ -777,17 +779,22 @@ def _format_demographics(raw: dict) -> dict:
     per-account entry into what the Media Kit template needs: an age
     breakdown in natural age order (not sorted by size), a gender split,
     and top-5 country/city lists, each with a percentage of the total
-    audience that breakdown covers. Currently only ever populated for
-    Instagram accounts -- see instagramanalyticspipeline/src/graph_
-    client.py's get_follower_demographics()."""
+    audience that breakdown covers. Populated for Instagram (see
+    instagramanalyticspipeline/src/graph_client.py's get_follower_
+    demographics(), a real age*gender cross-tab) and, manually, for
+    platforms with no demographics API at all (see vision.py) -- those
+    submit age and gender as independent single-axis rows rather than a
+    cross-tab, using an empty string in the unused dims slot, which the
+    truthiness checks below (not just a length check) keep out of the
+    other axis's totals."""
     age_totals: dict = {}
     gender_totals: dict = {}
     for row in raw.get("age_gender") or []:
         dims = row.get("dimension_values") or []
         value = row.get("value") or 0
-        if len(dims) >= 1:
+        if len(dims) >= 1 and dims[0]:
             age_totals[dims[0]] = age_totals.get(dims[0], 0) + value
-        if len(dims) >= 2:
+        if len(dims) >= 2 and dims[1]:
             gender_totals[dims[1]] = gender_totals.get(dims[1], 0) + value
 
     age_total_sum = sum(age_totals.values())
@@ -827,6 +834,57 @@ def _format_demographics(raw: dict) -> dict:
         "has_data": bool(age_totals or raw.get("country") or raw.get("city")),
         "snapshot_date": raw.get("snapshot_date"),
     }
+
+
+def record_demographics_from_screenshot(
+    client: bigquery.Client, platform: str, account_username: str, image_bytes: bytes, media_type: str
+) -> str:
+    """Parses a platform's own in-app demographics screenshot via Claude
+    vision (see vision.py -- built for TikTok, which exposes no
+    demographics API at all) and stores it through the same
+    account_demographics table/MERGE the API-driven platforms use, so
+    the Media Kit's rendering needs no platform-specific branching. Age
+    and gender are submitted as independent single-axis rows (see
+    _format_demographics()'s docstring on the truthiness checks that
+    keep them from cross-contaminating) since a screenshot's separate
+    Gender and Age charts aren't a real cross-tab the way Meta's API
+    data is. Returns a human-readable summary for a flash message.
+    Raises vision.VisionParseError on failure -- nothing is recorded."""
+    parsed = vision.parse_demographics_screenshot(image_bytes, media_type)
+
+    age_gender_rows = [
+        {"dimension_values": [item["label"]], "value": item["pct"]} for item in parsed.get("age") or []
+    ] + [
+        {"dimension_values": ["", item["label"]], "value": item["pct"]} for item in parsed.get("gender") or []
+    ]
+    country_rows = [
+        {"dimension_values": [item["label"]], "value": item["pct"]} for item in parsed.get("countries") or []
+    ]
+
+    account_id = next(
+        (
+            a.get("Account_ID")
+            for a in content_store.get_latest_account_stats(client)
+            if a["Platform"] == platform and a["Account_Username"] == account_username
+        ),
+        None,
+    )
+
+    content_store.record_account_demographics(
+        client, platform, account_username, account_id, age_gender_rows, country_rows, []
+    )
+
+    summary_parts = []
+    if parsed.get("gender"):
+        top = max(parsed["gender"], key=lambda g: g["pct"])
+        summary_parts.append(f"{top['label']} {top['pct']}%")
+    if parsed.get("age"):
+        top = max(parsed["age"], key=lambda a: a["pct"])
+        summary_parts.append(f"top age {top['label']} ({top['pct']}%)")
+    if parsed.get("countries"):
+        top = max(parsed["countries"], key=lambda c: c["pct"])
+        summary_parts.append(f"top country {top['label']} ({top['pct']}%)")
+    return f"Updated {platform} demographics for {account_username}: " + ", ".join(summary_parts)
 
 
 _STORY_INT_FIELDS = {"Views", "Likes", "Shares", "Sticker_Taps", "Replies"}

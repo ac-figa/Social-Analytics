@@ -76,6 +76,19 @@ for secret in google-client-secret flask-secret-key; do
 done
 ```
 
+Optional: the Media Kit's "Update from Screenshot" demographics uploader
+(`src/vision.py`) needs an Anthropic API key. Skip this if you don't want
+that feature live -- the upload control just hides itself when unset:
+
+```bash
+echo -n "YOUR_ANTHROPIC_API_KEY" | \
+  gcloud secrets create anthropic-api-key --data-file=-
+
+gcloud secrets add-iam-policy-binding anthropic-api-key \
+  --member="serviceAccount:dashboard-runner@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
 ## 4. Build and push the image
 
 The Dockerfile lives in `webapp/` but the build needs the **repo root**
@@ -105,8 +118,11 @@ gcloud run deploy social-analytics-dashboard \
   --service-account="dashboard-runner@${PROJECT_ID}.iam.gserviceaccount.com" \
   --allow-unauthenticated \
   --set-env-vars="BQ_PROJECT_ID=${PROJECT_ID},GOOGLE_CLIENT_ID=YOUR_CLIENT_ID,ALLOWED_EMAILS=you@gmail.com" \
-  --set-secrets="GOOGLE_CLIENT_SECRET=google-client-secret:latest,FLASK_SECRET_KEY=flask-secret-key:latest"
+  --set-secrets="GOOGLE_CLIENT_SECRET=google-client-secret:latest,FLASK_SECRET_KEY=flask-secret-key:latest,ANTHROPIC_API_KEY=anthropic-api-key:latest"
 ```
+
+Drop the `ANTHROPIC_API_KEY=...` clause from `--set-secrets` if you skipped
+the optional secret above.
 
 `--allow-unauthenticated` looks alarming but is correct here: it means
 Cloud Run itself doesn't block requests at the network level -- the
