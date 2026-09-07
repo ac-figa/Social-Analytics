@@ -816,6 +816,16 @@ def _format_demographics(raw: dict) -> dict:
     ]
 
     def _top_single(rows: list, limit: int = 5) -> list:
+        """Top N labels by value, with pct computed against the FULL total
+        (including any 'Others'/'Other' catch-all row the source reported) --
+        not just the sum of the named labels shown. Without this, a source
+        that only names its top handful of buckets and rolls the rest into
+        an "Others" bucket (e.g. vision.py's screenshot extraction, which
+        deliberately keeps that row so the true total survives) would have
+        its shown percentages silently inflated: e.g. a bucket that's really
+        15.8% of the whole audience reads as 29% once the "Others" share is
+        dropped from the denominator entirely. "Others" itself is excluded
+        from the ranking (it isn't a real label) but still counted in total."""
         counts: dict = {}
         for row in rows or []:
             dims = row.get("dimension_values") or []
@@ -823,7 +833,8 @@ def _format_demographics(raw: dict) -> dict:
                 continue
             counts[dims[0]] = counts.get(dims[0], 0) + (row.get("value") or 0)
         total = sum(counts.values())
-        top = sorted(counts.items(), key=lambda kv: -kv[1])[:limit]
+        named = {k: v for k, v in counts.items() if k not in ("Others", "Other")}
+        top = sorted(named.items(), key=lambda kv: -kv[1])[:limit]
         return [{"label": k, "value": v, "pct": _pct(v, total)} for k, v in top]
 
     return {
@@ -881,8 +892,9 @@ def record_demographics_from_screenshot(
     if parsed.get("age"):
         top = max(parsed["age"], key=lambda a: a["pct"])
         summary_parts.append(f"top age {top['label']} ({top['pct']}%)")
-    if parsed.get("countries"):
-        top = max(parsed["countries"], key=lambda c: c["pct"])
+    named_countries = [c for c in parsed.get("countries") or [] if c["label"] not in ("Others", "Other")]
+    if named_countries:
+        top = max(named_countries, key=lambda c: c["pct"])
         summary_parts.append(f"top country {top['label']} ({top['pct']}%)")
     return f"Updated {platform} demographics for {account_username}: " + ", ".join(summary_parts)
 
