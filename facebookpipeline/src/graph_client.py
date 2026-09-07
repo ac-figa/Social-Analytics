@@ -160,6 +160,46 @@ class FacebookGraphClient:
         return payload
 
     # ---------------------------------------------------------------- #
+    # Fan demographics (best-effort, experimental -- see docstring)
+    # ---------------------------------------------------------------- #
+    def get_page_fan_demographics(self) -> dict:
+        """Attempts the same follower_demographics insights metric that
+        works for Instagram (see instagramanalyticspipeline/src/graph_
+        client.py's get_follower_demographics() -- identical request
+        shape, just against the Page node instead of the IG User node),
+        on the theory that Meta shares this underlying infrastructure
+        across both surfaces. Genuinely untested against a real Page as
+        of writing: Meta deprecated several of the older page_fans_*
+        Page Insights demographic metrics in past API versions, and
+        whether this newer metric name is actually available for Pages
+        (versus Instagram-only) isn't confirmed. Must call get_page_info()
+        first (Page Access Token). Best-effort per breakdown, same as the
+        Instagram twin -- a rejected/unsupported metric just logs a
+        warning and returns an empty list for that breakdown rather than
+        failing the sync; call this pipeline's log output the actual
+        answer to whether Meta supports it for Pages."""
+        breakdowns = {"age_gender": "age,gender", "country": "country", "city": "city"}
+        result = {}
+        for key, breakdown in breakdowns.items():
+            try:
+                payload = self._get(
+                    f"{self.page_id}/insights",
+                    {
+                        "metric": "follower_demographics",
+                        "period": "lifetime",
+                        "metric_type": "total_value",
+                        "breakdown": breakdown,
+                    },
+                )
+                result[key] = _extract_demographics_results(payload)
+            except (TokenExpiredError, RateLimitedError):
+                raise
+            except GraphAPIError as e:
+                log.warning("Page fan demographics ('%s') unavailable: %s", breakdown, e)
+                result[key] = []
+        return result
+
+    # ---------------------------------------------------------------- #
     # Video listing
     # ---------------------------------------------------------------- #
     def get_all_video_ids(self) -> Iterator[dict]:
@@ -287,6 +327,26 @@ def _lifetime_values(metric_objs: list) -> dict:
     return {
         m["name"]: _extract_metric_value(m) for m in metric_objs if m.get("period") == "lifetime"
     }
+
+
+def _extract_demographics_results(payload: dict) -> list:
+    """Pulls the [{"dimension_values": [...], "value": N}, ...] rows out
+    of a follower_demographics (metric_type=total_value, breakdown=...)
+    response. Written defensively -- returns [] rather than raising on
+    any shape this doesn't expect, since whether Pages even support this
+    metric at all is unconfirmed; a parsing miss should degrade to "no
+    demographics this run", never break the sync."""
+    try:
+        data = payload.get("data", [])
+        if not data:
+            return []
+        breakdowns = data[0].get("total_value", {}).get("breakdowns", [])
+        if not breakdowns:
+            return []
+        return breakdowns[0].get("results", [])
+    except (AttributeError, IndexError, TypeError) as e:
+        log.warning("Unexpected follower_demographics response shape: %s", e)
+        return []
 
 
 def _extract_metric_value(metric_obj: dict):
