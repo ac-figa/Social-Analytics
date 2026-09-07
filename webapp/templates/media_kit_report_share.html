@@ -288,7 +288,7 @@
               <div class="partner-card-top">
                 <div>
                   <div class="partner-name">{{ p.Partnership }}</div>
-                  <div class="partner-meta">{{ p.total_posted }} piece{{ '' if p.total_posted == 1 else 's' }} of content{% if p.platform_breakdown %} across {{ p.platform_breakdown|map(attribute=0)|join(', ') }}{% endif %}</div>
+                  <div class="partner-meta">{{ p.total_posted }} piece{{ '' if p.total_posted == 1 else 's' }} of content{% if p.platform_breakdown %} across {{ p.platform_breakdown|map(attribute=0)|join(', ') }}{% endif %}{% if p.used_all_time %} · all-time (none in the last {{ report.partnership_window_days }} days){% endif %}</div>
                 </div>
                 <div class="partner-stats">
                   <div class="partner-stat"><span class="v">{{ p.totals.Views|compact }}</span><span class="l">Views</span></div>

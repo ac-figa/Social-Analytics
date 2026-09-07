@@ -991,6 +991,14 @@ def _summarize_partnership_recent(pr: dict, days: int = _PARTNERSHIP_HIGHLIGHT_W
     groups = [g for g in pr["groups"] if _group_in_window(g)]
     stories = [s for s in pr["stories"] if _story_in_window(s)]
 
+    used_all_time = False
+    if not groups and not stories and (pr["groups"] or pr["stories"]):
+        # No activity in the window, but the partnership has activity
+        # overall -- someone deliberately picked this partnership to
+        # include in the report, so fall back to all-time numbers rather
+        # than showing a misleading wall of zeros for it.
+        groups, stories, used_all_time = pr["groups"], pr["stories"], True
+
     totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0}
     platform_counts: dict = {}
     for g in groups:
@@ -1014,6 +1022,7 @@ def _summarize_partnership_recent(pr: dict, days: int = _PARTNERSHIP_HIGHLIGHT_W
         "totals": totals,
         "platform_breakdown": sorted(platform_counts.items(), key=lambda kv: kv[0]),
         "top_videos": ig_candidates[:_PARTNERSHIP_HIGHLIGHT_MAX_VIDEOS],
+        "used_all_time": used_all_time,
     }
 
 
