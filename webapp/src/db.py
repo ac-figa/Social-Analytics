@@ -563,6 +563,125 @@ def get_topic_report(client: bigquery.Client, topic: str, months: int = 12) -> d
     }
 
 
+_EXPORT_GROUP_BY_OPTIONS = ("none", "platform", "brand", "partnership", "topic")
+
+
+def get_export_report(
+    client: bigquery.Client,
+    since=None,
+    until=None,
+    platforms: list = None,
+    partnerships: list = None,
+    topics: list = None,
+    brand: str = None,
+    group_by: str = "none",
+) -> dict:
+    """Export builder's data: totals plus an optional breakdown table, for
+    whatever combination of date range / platform / brand / partnership /
+    topic filters the user picked. Followers is a live snapshot (not
+    date-ranged -- "how many followers do I have" is always a right-now
+    question), everything else is summed from groups matching the filters.
+    Mirrors get_partnership_report()/get_topic_report()'s totals shape but
+    generalized across every axis instead of being pinned to one
+    partnership or topic."""
+    groups = content_store.get_export_groups(
+        client, since=since, until=until, platforms=platforms, partnerships=partnerships, topics=topics
+    )
+    group_ids = [g["Group_ID"] for g in groups]
+    topics_by_group = content_store.get_topics_for_groups(client, group_ids) if group_ids else {}
+    for g in groups:
+        g["Topics"] = topics_by_group.get(g["Group_ID"], [])
+        usernames = {m["Account_Username"] for m in g["Members"] if m.get("Account_Username")}
+        group_brands = {_account_brand(u) for u in usernames}
+        g["Brand"] = group_brands.pop() if len(group_brands) == 1 else "Mixed"
+
+    if brand:
+        groups = [g for g in groups if g["Brand"] == brand]
+
+    accounts = content_store.get_latest_account_stats(client)
+    for a in accounts:
+        a["Brand"] = _account_brand(a["Account_Username"])
+    if platforms:
+        accounts = [a for a in accounts if a["Platform"] in platforms]
+    if brand:
+        accounts = [a for a in accounts if a["Brand"] == brand]
+
+    totals = {
+        "Post_Count": len(groups),
+        "Views": sum(g.get("Views") or 0 for g in groups),
+        "Likes": sum(g.get("Likes") or 0 for g in groups),
+        "Comments": sum(g.get("Comments") or 0 for g in groups),
+        "Shares": sum(g.get("Shares") or 0 for g in groups),
+        "Followers": sum(a.get("Followers") or 0 for a in accounts),
+    }
+
+    if group_by not in _EXPORT_GROUP_BY_OPTIONS:
+        group_by = "none"
+    breakdown = _build_export_breakdown(groups, accounts, group_by)
+
+    return {"groups": groups, "totals": totals, "breakdown": breakdown, "group_by": group_by}
+
+
+def _build_export_breakdown(groups: list, accounts: list, group_by: str) -> list:
+    """Buckets groups (and, for platform/brand, accounts too -- for the
+    Followers column) by the chosen dimension. Topic buckets can double-
+    count a video's stats across each topic it carries, same as the topic
+    report's own totals -- that's correct, not a bug: a video tagged both
+    Coffee and Food really did contribute its views to both stories."""
+    if group_by == "none":
+        return []
+
+    buckets: dict = {}
+
+    def bucket(label):
+        return buckets.setdefault(
+            label, {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0, "Followers": 0, "_group_ids": set()}
+        )
+
+    if group_by == "platform":
+        for g in groups:
+            for m in g["Members"]:
+                b = bucket(m["Platform"])
+                for key in ("Views", "Likes", "Comments", "Shares"):
+                    b[key] += m.get(key) or 0
+                b["_group_ids"].add(g["Group_ID"])
+        for a in accounts:
+            bucket(a["Platform"])["Followers"] += a.get("Followers") or 0
+    elif group_by == "brand":
+        for g in groups:
+            b = bucket(g["Brand"])
+            for key in ("Views", "Likes", "Comments", "Shares"):
+                b[key] += g.get(key) or 0
+            b["_group_ids"].add(g["Group_ID"])
+        for a in accounts:
+            bucket(a["Brand"])["Followers"] += a.get("Followers") or 0
+    elif group_by == "partnership":
+        for g in groups:
+            b = bucket(g.get("Partnership") or "Unclassified")
+            for key in ("Views", "Likes", "Comments", "Shares"):
+                b[key] += g.get(key) or 0
+            b["_group_ids"].add(g["Group_ID"])
+    elif group_by == "topic":
+        for g in groups:
+            for label in (g["Topics"] or ["(No Topic)"]):
+                b = bucket(label)
+                for key in ("Views", "Likes", "Comments", "Shares"):
+                    b[key] += g.get(key) or 0
+                b["_group_ids"].add(g["Group_ID"])
+
+    rows = [
+        {
+            "Label": label,
+            "Post_Count": len(b["_group_ids"]),
+            "Views": b["Views"], "Likes": b["Likes"], "Comments": b["Comments"], "Shares": b["Shares"],
+            "Followers": b["Followers"],
+        }
+        for label, b in buckets.items()
+    ]
+    rows.sort(key=lambda r: r["Views"], reverse=True)
+    return rows
+
+
 def _account_brand(account_username: str) -> str:
     """Classifies an account_stats row by brand for the Media Kit's
     filter -- a substring match on Account_Username rather than a stored
