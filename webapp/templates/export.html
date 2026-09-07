@@ -51,10 +51,21 @@
         <select id="f-group-by" name="group_by" class="field-input">
           <option value="none" {{ 'selected' if group_by == 'none' }}>Totals Only</option>
           <option value="platform" {{ 'selected' if group_by == 'platform' }}>Platform</option>
+          <option value="account" {{ 'selected' if group_by == 'account' }}>Account</option>
           <option value="brand" {{ 'selected' if group_by == 'brand' }}>Brand</option>
           <option value="partnership" {{ 'selected' if group_by == 'partnership' }}>Partnership</option>
           <option value="topic" {{ 'selected' if group_by == 'topic' }}>Topic</option>
         </select>
+      </div>
+
+      <div class="filter-field">
+        <label class="filter-field-label" for="f-accounts">Accounts</label>
+        <select id="f-accounts" name="accounts" class="field-input filter-select" multiple>
+          {% for a in all_accounts %}
+            <option value="{{ a.Account_Username }}" {{ 'selected' if a.Account_Username in selected_accounts }}>{{ a.Account_Username }} ({{ a.Platform }})</option>
+          {% endfor %}
+        </select>
+        <p class="filter-hint">None selected = all accounts.</p>
       </div>
 
       <div class="filter-field">
@@ -84,7 +95,7 @@
     </div>
   </form>
 
-  <p class="page-subtitle" style="margin-bottom:14px;"><strong>{{ range_label }}</strong>{% if selected_platforms %} · {{ selected_platforms|join(', ') }}{% endif %}{% if brand %} · {{ brand }}{% endif %}{% if selected_partnerships %} · {{ selected_partnerships|join(', ') }}{% endif %}{% if selected_topics %} · {{ selected_topics|join(', ') }}{% endif %}</p>
+  <p class="page-subtitle" style="margin-bottom:14px;"><strong>{{ range_label }}</strong>{% if selected_platforms %} · {{ selected_platforms|join(', ') }}{% endif %}{% if brand %} · {{ brand }}{% endif %}{% if selected_accounts %} · {{ selected_accounts|join(', ') }}{% endif %}{% if selected_partnerships %} · {{ selected_partnerships|join(', ') }}{% endif %}{% if selected_topics %} · {{ selected_topics|join(', ') }}{% endif %}</p>
 
   <div class="stat-strip">
     <div class="stat-chip accent"><span class="n">{{ '{:,}'.format(report.totals.Post_Count) }}</span><span class="l">posts</span></div>

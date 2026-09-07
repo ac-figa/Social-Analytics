@@ -390,7 +390,10 @@ def export():
 
     all_partnerships = [p["Partnership"] for p in db.list_partnerships(client)]
     all_topics = [t["Topic"] for t in db.list_topics(client)]
+    all_accounts = db.list_all_accounts(client)
+    valid_account_usernames = {a["Account_Username"] for a in all_accounts}
     platforms = [p for p in request.args.getlist("platforms") if p in PLATFORMS]
+    accounts = [a for a in request.args.getlist("accounts") if a in valid_account_usernames]
     partnerships = [p for p in request.args.getlist("partnerships") if p in all_partnerships]
     topics = [t for t in request.args.getlist("topics") if t in all_topics]
     brand = request.args.get("brand") or None
@@ -400,7 +403,8 @@ def export():
 
     report = db.get_export_report(
         client, since=since, until=until,
-        platforms=platforms or None, partnerships=partnerships or None, topics=topics or None,
+        platforms=platforms or None, accounts=accounts or None,
+        partnerships=partnerships or None, topics=topics or None,
         brand=brand, group_by=group_by,
     )
 
@@ -418,6 +422,7 @@ def export():
         "export.html",
         report=report,
         platforms=PLATFORMS, selected_platforms=platforms,
+        all_accounts=all_accounts, selected_accounts=accounts,
         all_partnerships=all_partnerships, selected_partnerships=partnerships,
         all_topics=all_topics, selected_topics=topics,
         brands=_EXPORT_BRANDS, brand=brand,
