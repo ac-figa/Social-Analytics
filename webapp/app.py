@@ -418,13 +418,17 @@ def export():
     else:
         range_label = f"Last {range_key} days"
 
+    partnership_options = [(p, p) for p in all_partnerships]
+    topic_options = [(t, t) for t in all_topics]
+    account_options = [(a["Account_Username"], f'{a["Account_Username"]} ({a["Platform"]})') for a in all_accounts]
+
     return render_template(
         "export.html",
         report=report,
         platforms=PLATFORMS, selected_platforms=platforms,
-        all_accounts=all_accounts, selected_accounts=accounts,
-        all_partnerships=all_partnerships, selected_partnerships=partnerships,
-        all_topics=all_topics, selected_topics=topics,
+        account_options=account_options, selected_accounts=accounts,
+        partnership_options=partnership_options, selected_partnerships=partnerships,
+        topic_options=topic_options, selected_topics=topics,
         brands=_EXPORT_BRANDS, brand=brand,
         range_key=range_key, range_label=range_label, from_date=from_date, to_date=to_date, group_by=group_by,
         nav_counts=db.get_dashboard_counts(client),
