@@ -1480,6 +1480,81 @@ def get_partner_report(client: bigquery.Client, partnership: str) -> list:
     return [dict(r) for r in rows]
 
 
+def get_export_groups(
+    client: bigquery.Client,
+    since=None,
+    until=None,
+    platforms: list = None,
+    partnerships: list = None,
+    topics: list = None,
+) -> list:
+    """General-purpose version of get_partnership_groups()/get_topic_groups()
+    for the Export report builder -- every confirmed content_group matching
+    the given filters, each with its full member list and per-group summed
+    stats. since/until bound a group's earliest Publish_Date via HAVING, not
+    WHERE (see get_topic_groups()'s docstring: a WHERE would drop individual
+    out-of-range *members* row-by-row before grouping, leaving a group
+    showing only some of the platforms it actually posted to). platforms
+    filters to groups with at least one member on one of those platforms --
+    a WHERE here is fine since it only decides whether to include the group
+    at all, and doesn't touch which members come back in Members (a group
+    matched because it has a TikTok member still returns its Instagram
+    member too, for accurate per-group totals). partnerships/topics are
+    ANY-match lists."""
+    where_clauses = []
+    params = []
+    if platforms:
+        where_clauses.append(f"""
+          g.Group_ID IN (
+            SELECT m2.Group_ID FROM `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m2
+            JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci2 ON m2.Content_ID = ci2.Content_ID
+            WHERE m2.Confirmed = TRUE AND ci2.Platform IN UNNEST(@platforms)
+          )
+        """)
+        params.append(bigquery.ArrayQueryParameter("platforms", "STRING", platforms))
+    if partnerships:
+        where_clauses.append("g.Partnership IN UNNEST(@partnerships)")
+        params.append(bigquery.ArrayQueryParameter("partnerships", "STRING", partnerships))
+    if topics:
+        where_clauses.append(f"""
+          g.Group_ID IN (SELECT Group_ID FROM `{_table_ref(CONTENT_GROUP_TOPICS_TABLE)}` WHERE Topic IN UNNEST(@topics))
+        """)
+        params.append(bigquery.ArrayQueryParameter("topics", "STRING", topics))
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    having_clauses = []
+    if since is not None:
+        having_clauses.append("MIN(ci.Publish_Date) >= @since")
+        params.append(bigquery.ScalarQueryParameter("since", "TIMESTAMP", since))
+    if until is not None:
+        having_clauses.append("MIN(ci.Publish_Date) < @until")
+        params.append(bigquery.ScalarQueryParameter("until", "TIMESTAMP", until))
+    having_sql = ("HAVING " + " AND ".join(having_clauses)) if having_clauses else ""
+
+    query = f"""
+    SELECT
+      g.Group_ID, g.Partnership, g.Content_Type,
+      ARRAY_AGG(
+        STRUCT(ci.Content_ID AS Content_ID, ci.Platform AS Platform, ci.Account_Username AS Account_Username,
+               ci.Publish_Date AS Publish_Date, ci.Permalink AS Permalink,
+               ci.Views AS Views, ci.Likes AS Likes, ci.Comments AS Comments, ci.Shares AS Shares)
+        ORDER BY ci.Platform
+      ) AS Members,
+      MIN(ci.Publish_Date) AS Publish_Date,
+      SUM(ci.Views) AS Views, SUM(ci.Likes) AS Likes,
+      SUM(ci.Comments) AS Comments, SUM(ci.Shares) AS Shares
+    FROM `{_table_ref(CONTENT_GROUPS_TABLE)}` g
+    JOIN `{_table_ref(CONTENT_GROUP_MEMBERS_TABLE)}` m ON g.Group_ID = m.Group_ID AND m.Confirmed = TRUE
+    JOIN `{_table_ref(CONTENT_ITEMS_TABLE)}` ci ON m.Content_ID = ci.Content_ID
+    {where_sql}
+    GROUP BY g.Group_ID, g.Partnership, g.Content_Type
+    {having_sql}
+    ORDER BY Publish_Date DESC
+    """
+    rows = client.query(query, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
+    return [dict(r) for r in rows]
+
+
 def record_account_stat(
     client: bigquery.Client, platform: str, account_username: str, account_id, followers
 ) -> None:

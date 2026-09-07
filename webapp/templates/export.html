@@ -1,0 +1,134 @@
+{% extends "base_shell.html" %}
+{% block title %}Export{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Export</h1>
+      <p class="page-subtitle">Build a stats report from any combination of date range, platform, brand, partnership, or topic — view it here or download it as a CSV.</p>
+    </div>
+  </div>
+
+  <form method="get" action="{{ url_for('export') }}" class="filter-panel">
+    <div class="filter-grid">
+      <div class="filter-field">
+        <label class="filter-field-label" for="f-range">Date Range</label>
+        <select id="f-range" name="range" class="field-input">
+          <option value="7" {{ 'selected' if range_key == '7' }}>Last 7 days</option>
+          <option value="30" {{ 'selected' if range_key == '30' }}>Last 30 days</option>
+          <option value="90" {{ 'selected' if range_key == '90' }}>Last 90 days</option>
+          <option value="365" {{ 'selected' if range_key == '365' }}>Last 12 months</option>
+          <option value="all" {{ 'selected' if range_key == 'all' }}>All time</option>
+          <option value="custom" {{ 'selected' if range_key == 'custom' }}>Custom range…</option>
+        </select>
+        <div class="custom-dates">
+          <input type="date" name="from_date" value="{{ from_date }}" class="field-input" aria-label="From date">
+          <span class="filter-hint">to</span>
+          <input type="date" name="to_date" value="{{ to_date }}" class="field-input" aria-label="To date">
+        </div>
+        <p class="filter-hint">Dates only apply when Range is "Custom range".</p>
+      </div>
+
+      <div class="filter-field">
+        <label class="filter-field-label">Platforms</label>
+        <div class="checkbox-list">
+          {% for p in platforms %}
+            <label><input type="checkbox" name="platforms" value="{{ p }}" {{ 'checked' if p in selected_platforms }}> {{ p }}</label>
+          {% endfor %}
+        </div>
+        <p class="filter-hint">None checked = all platforms.</p>
+      </div>
+
+      <div class="filter-field">
+        <label class="filter-field-label" for="f-brand">Brand</label>
+        <select id="f-brand" name="brand" class="field-input">
+          <option value="">All Brands</option>
+          {% for b in brands %}
+            <option value="{{ b }}" {{ 'selected' if b == brand }}>{{ b }}</option>
+          {% endfor %}
+        </select>
+
+        <label class="filter-field-label" for="f-group-by" style="margin-top:10px;">Group By</label>
+        <select id="f-group-by" name="group_by" class="field-input">
+          <option value="none" {{ 'selected' if group_by == 'none' }}>Totals Only</option>
+          <option value="platform" {{ 'selected' if group_by == 'platform' }}>Platform</option>
+          <option value="brand" {{ 'selected' if group_by == 'brand' }}>Brand</option>
+          <option value="partnership" {{ 'selected' if group_by == 'partnership' }}>Partnership</option>
+          <option value="topic" {{ 'selected' if group_by == 'topic' }}>Topic</option>
+        </select>
+      </div>
+
+      <div class="filter-field">
+        <label class="filter-field-label" for="f-partnerships">Partnerships</label>
+        <select id="f-partnerships" name="partnerships" class="field-input filter-select" multiple>
+          {% for p in all_partnerships %}
+            <option value="{{ p }}" {{ 'selected' if p in selected_partnerships }}>{{ p }}</option>
+          {% endfor %}
+        </select>
+        <p class="filter-hint">None selected = all partnerships. Ctrl/Cmd-click for multiple.</p>
+      </div>
+
+      <div class="filter-field">
+        <label class="filter-field-label" for="f-topics">Topics</label>
+        <select id="f-topics" name="topics" class="field-input filter-select" multiple>
+          {% for t in all_topics %}
+            <option value="{{ t }}" {{ 'selected' if t in selected_topics }}>{{ t }}</option>
+          {% endfor %}
+        </select>
+        <p class="filter-hint">None selected = all topics.</p>
+      </div>
+    </div>
+
+    <div class="filter-actions">
+      <button type="submit" name="format" value="html" class="btn btn-primary">Generate Report</button>
+      <button type="submit" name="format" value="csv" class="btn btn-ghost">Download CSV</button>
+    </div>
+  </form>
+
+  <p class="page-subtitle" style="margin-bottom:14px;"><strong>{{ range_label }}</strong>{% if selected_platforms %} · {{ selected_platforms|join(', ') }}{% endif %}{% if brand %} · {{ brand }}{% endif %}{% if selected_partnerships %} · {{ selected_partnerships|join(', ') }}{% endif %}{% if selected_topics %} · {{ selected_topics|join(', ') }}{% endif %}</p>
+
+  <div class="stat-strip">
+    <div class="stat-chip accent"><span class="n">{{ '{:,}'.format(report.totals.Post_Count) }}</span><span class="l">posts</span></div>
+    <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Views) }}</span><span class="l">views</span></div>
+    <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Likes) }}</span><span class="l">likes</span></div>
+    <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Comments) }}</span><span class="l">comments</span></div>
+    <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Shares) }}</span><span class="l">shares</span></div>
+    <div class="stat-chip"><span class="n">{{ '{:,}'.format(report.totals.Followers) }}</span><span class="l">followers (current)</span></div>
+  </div>
+
+  {% if report.group_by != 'none' %}
+    {% if not report.breakdown %}
+      <p class="db-empty">No matching data for this filter combination.</p>
+    {% else %}
+      <div style="overflow-x:auto;">
+        <table class="dtable">
+          <thead>
+            <tr>
+              <th>{{ report.group_by|capitalize }}</th>
+              <th class="num">Posts</th>
+              <th class="num">Views</th>
+              <th class="num">Likes</th>
+              <th class="num">Comments</th>
+              <th class="num">Shares</th>
+              <th class="num">Followers</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in report.breakdown %}
+              <tr>
+                <td>{{ row.Label }}</td>
+                <td class="num">{{ '{:,}'.format(row.Post_Count) }}</td>
+                <td class="num">{{ '{:,}'.format(row.Views) }}</td>
+                <td class="num">{{ '{:,}'.format(row.Likes) }}</td>
+                <td class="num">{{ '{:,}'.format(row.Comments) }}</td>
+                <td class="num">{{ '{:,}'.format(row.Shares) }}</td>
+                <td class="num">{{ '{:,}'.format(row.Followers) if row.Followers else '—' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  {% elif not report.groups %}
+    <p class="db-empty">No matching posts for this filter combination.</p>
+  {% endif %}
+{% endblock %}

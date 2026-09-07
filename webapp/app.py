@@ -10,7 +10,11 @@ needs google-cloud-bigquery, flask, python-dotenv):
 
 Then open http://127.0.0.1:5050 -- see README.md for full setup.
 """
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+import csv
+import io
+from datetime import datetime, timedelta, timezone
+
+from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from src import config, db, sync
@@ -355,6 +359,92 @@ def media_kit():
         brands=media_kit_data["brands"],
         brand=brand,
         nav_counts=db.get_dashboard_counts(client),
+    )
+
+
+_EXPORT_BRANDS = ("Bello Bros", "Calcio Bros")
+
+
+@app.route("/export")
+def export():
+    client = db.get_client()
+
+    range_key = request.args.get("range", "30")
+    now = datetime.now(timezone.utc)
+    since = until = None
+    from_date = request.args.get("from_date", "")
+    to_date = request.args.get("to_date", "")
+    if range_key == "all":
+        pass
+    elif range_key == "custom":
+        if from_date:
+            since = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if to_date:
+            until = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+    else:
+        try:
+            days = int(range_key)
+        except ValueError:
+            days, range_key = 30, "30"
+        since = now - timedelta(days=days)
+
+    all_partnerships = [p["Partnership"] for p in db.list_partnerships(client)]
+    all_topics = [t["Topic"] for t in db.list_topics(client)]
+    platforms = [p for p in request.args.getlist("platforms") if p in PLATFORMS]
+    partnerships = [p for p in request.args.getlist("partnerships") if p in all_partnerships]
+    topics = [t for t in request.args.getlist("topics") if t in all_topics]
+    brand = request.args.get("brand") or None
+    if brand not in _EXPORT_BRANDS:
+        brand = None
+    group_by = request.args.get("group_by", "none")
+
+    report = db.get_export_report(
+        client, since=since, until=until,
+        platforms=platforms or None, partnerships=partnerships or None, topics=topics or None,
+        brand=brand, group_by=group_by,
+    )
+
+    if request.args.get("format") == "csv":
+        return _export_csv_response(report, group_by)
+
+    if range_key == "all":
+        range_label = "All time"
+    elif range_key == "custom":
+        range_label = f"{from_date or '…'} – {to_date or '…'}"
+    else:
+        range_label = f"Last {range_key} days"
+
+    return render_template(
+        "export.html",
+        report=report,
+        platforms=PLATFORMS, selected_platforms=platforms,
+        all_partnerships=all_partnerships, selected_partnerships=partnerships,
+        all_topics=all_topics, selected_topics=topics,
+        brands=_EXPORT_BRANDS, brand=brand,
+        range_key=range_key, range_label=range_label, from_date=from_date, to_date=to_date, group_by=group_by,
+        nav_counts=db.get_dashboard_counts(client),
+    )
+
+
+def _export_csv_response(report: dict, group_by: str) -> Response:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    totals = report["totals"]
+    if group_by == "none":
+        writer.writerow(["Metric", "Value"])
+        for key, label in (
+            ("Post_Count", "Posts"), ("Views", "Views"), ("Likes", "Likes"),
+            ("Comments", "Comments"), ("Shares", "Shares"), ("Followers", "Followers"),
+        ):
+            writer.writerow([label, totals[key]])
+    else:
+        writer.writerow([group_by.capitalize(), "Posts", "Views", "Likes", "Comments", "Shares", "Followers"])
+        for row in report["breakdown"]:
+            writer.writerow([row["Label"], row["Post_Count"], row["Views"], row["Likes"], row["Comments"], row["Shares"], row["Followers"]])
+        writer.writerow(["Total", totals["Post_Count"], totals["Views"], totals["Likes"], totals["Comments"], totals["Shares"], totals["Followers"]])
+    return Response(
+        output.getvalue(), mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=social-analytics-export.csv"},
     )
 
 
