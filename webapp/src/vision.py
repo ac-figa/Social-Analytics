@@ -65,8 +65,10 @@ _SCHEMA = {
             "description": (
                 "One entry per named country shown, each with its percentage, as an "
                 "ISO 3166-1 alpha-2 country code (e.g. \"US\", \"IT\", \"GB\"), not the "
-                "country name. Exclude any catch-all 'Others'/'Other' rollup row -- it "
-                "isn't a real country."
+                "country name. If the chart also shows a catch-all 'Others'/'Other' "
+                "rollup row (the remainder not broken out by country), include it too "
+                "with the literal label \"Others\" -- needed to preserve the true total "
+                "audience share, not just the share among named countries."
             ),
             "items": {
                 "type": "object",
@@ -101,9 +103,7 @@ _PROMPT = (
     "it to its two-letter code.\n"
     "- Gender: use \"Male\", \"Female\", \"Other\" (or whatever categories are actually "
     "shown).\n"
-    "Skip any 'Others'/'Other' catch-all rollup row in the locations list -- only include "
-    "named countries. If a section isn't present in the screenshot, return an empty list "
-    "for it."
+    "If a section isn't present in the screenshot, return an empty list for it."
 )
 
 
