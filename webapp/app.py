@@ -45,7 +45,7 @@ if _AUTH_ENABLED:
         # public_share is the whole point of this feature: a link brands
         # can open without a Google account on ALLOWED_EMAILS. Everything
         # else on this site still requires internal sign-in.
-        if request.endpoint in ("login", "login_start", "auth_callback", "static", "public_share", "public_topic_share") or auth.is_logged_in():
+        if request.endpoint in ("login", "login_start", "auth_callback", "static", "public_share", "public_topic_share", "public_media_kit_report") or auth.is_logged_in():
             return None
         return redirect(url_for("login"))
 
@@ -391,6 +391,75 @@ def upload_demographics_screenshot():
         flash(f"Couldn't read that screenshot: {e}", "error")
 
     return redirect(url_for("media_kit"))
+
+
+@app.route("/media-kit/reports")
+def media_kit_reports():
+    client = db.get_client()
+    return render_template(
+        "media_kit_reports.html", reports=db.list_media_kit_reports(client), nav_counts=db.get_dashboard_counts(client)
+    )
+
+
+@app.route("/media-kit/reports/new", methods=["GET", "POST"])
+def new_media_kit_report():
+    client = db.get_client()
+    all_accounts = db.list_all_accounts(client)
+    all_partnerships = [p["Partnership"] for p in db.list_partnerships(client)]
+    valid_account_keys = {f'{a["Platform"]}|{a["Account_Username"]}' for a in all_accounts}
+
+    recipient_name, note = "", ""
+    selected_accounts, selected_metrics, selected_partnerships = [], [], []
+
+    if request.method == "POST":
+        recipient_name = request.form.get("recipient_name", "").strip()
+        note = request.form.get("note", "")
+        selected_accounts = [k for k in request.form.getlist("accounts") if k in valid_account_keys]
+        selected_metrics = request.form.getlist("metrics")
+        selected_partnerships = [p for p in request.form.getlist("partnerships") if p in all_partnerships]
+
+        if not recipient_name:
+            flash("Give the report a recipient name.", "error")
+        elif not selected_accounts:
+            flash("Select at least one account to include.", "error")
+        else:
+            token = db.create_media_kit_report(
+                client, recipient_name, note, selected_accounts, selected_metrics, selected_partnerships
+            )
+            link = url_for("public_media_kit_report", token=token, _external=True)
+            flash(f"Created report for {recipient_name} — share link: {link}", "success")
+            return redirect(url_for("media_kit_reports"))
+
+    account_options = [
+        (f'{a["Platform"]}|{a["Account_Username"]}', f'{a["Account_Username"]} ({a["Platform"]})')
+        for a in all_accounts
+    ]
+    partnership_options = [(p, p) for p in all_partnerships]
+
+    return render_template(
+        "media_kit_report_new.html",
+        account_options=account_options, selected_accounts=selected_accounts,
+        partnership_options=partnership_options, selected_partnerships=selected_partnerships,
+        metrics=db.MEDIA_KIT_REPORT_METRICS, selected_metrics=selected_metrics,
+        recipient_name=recipient_name, note=note,
+        nav_counts=db.get_dashboard_counts(client),
+    )
+
+
+@app.route("/media-kit/reports/<report_id>/delete", methods=["POST"])
+def delete_media_kit_report(report_id):
+    db.delete_media_kit_report(db.get_client(), report_id)
+    flash("Deleted report.", "success")
+    return redirect(url_for("media_kit_reports"))
+
+
+@app.route("/media-kit-report/<token>")
+def public_media_kit_report(token):
+    client = db.get_client()
+    report = db.get_media_kit_report_data(client, token)
+    if report is None:
+        return render_template("share_not_found.html"), 404
+    return render_template("media_kit_report_share.html", report=report)
 
 
 _EXPORT_BRANDS = ("Bello Bros", "Calcio Bros")

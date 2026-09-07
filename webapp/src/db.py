@@ -918,6 +918,97 @@ def record_demographics_from_screenshot(
     return f"Updated {platform} demographics for {account_username}: " + ", ".join(summary_parts)
 
 
+MEDIA_KIT_REPORT_METRICS = (
+    ("followers", "Followers"),
+    ("views_30d", "Views (30d)"),
+    ("views_90d", "Views (90d)"),
+    ("views_270d", "Views (270d)"),
+    ("gender", "Gender"),
+    ("age", "Age"),
+    ("top_countries", "Top Countries"),
+)
+_MEDIA_KIT_REPORT_METRIC_KEYS = {key for key, _ in MEDIA_KIT_REPORT_METRICS}
+
+
+def list_media_kit_reports(client: bigquery.Client) -> list:
+    return content_store.list_media_kit_reports(client)
+
+
+def create_media_kit_report(
+    client: bigquery.Client, recipient_name: str, note: str, account_keys: list, metrics: list, partnerships: list
+) -> str:
+    """account_keys: "Platform|Account_Username" composite strings, as
+    submitted by the builder form's account checklist (bare usernames
+    aren't guaranteed unique across platforms, and the stored config
+    needs Platform anyway to look accounts back up later). Returns the
+    new report's share token."""
+    accounts = []
+    for key in account_keys:
+        platform, _, username = key.partition("|")
+        if platform and username:
+            accounts.append({"Platform": platform, "Account_Username": username})
+    metrics = [m for m in metrics if m in _MEDIA_KIT_REPORT_METRIC_KEYS]
+    return content_store.create_media_kit_report(
+        client, recipient_name.strip(), (note or "").strip(), accounts, metrics, partnerships
+    )
+
+
+def delete_media_kit_report(client: bigquery.Client, report_id: str) -> None:
+    content_store.delete_media_kit_report(client, report_id)
+
+
+def get_media_kit_report_data(client: bigquery.Client, token: str):
+    """Builds the public Media Kit Report page's data from a saved
+    config (see content_store.create_media_kit_report()): current stats
+    -- and demographics, for whichever accounts/metrics were selected --
+    for the configured accounts, plus a summary card for each configured
+    Partnership (reusing get_partnership_report()'s totals rather than
+    its full video list, since this is meant as a highlight, not another
+    full report). Returns None on an unrecognized token -- the public
+    route's fail-closed 404, matching get_partnership_by_share_token()."""
+    report = content_store.get_media_kit_report_by_token(client, token)
+    if report is None:
+        return None
+
+    account_keys = [(a["Platform"], a["Account_Username"]) for a in report["Accounts"]]
+    selected = set(account_keys)
+    accounts = [a for a in content_store.get_latest_account_stats(client) if (a["Platform"], a["Account_Username"]) in selected]
+
+    windows = (30, 90, 270)
+    views_by_account = content_store.get_views_in_windows_bulk(client, windows)
+    for a in accounts:
+        account_views = views_by_account.get((a["Platform"], a["Account_Username"]), {})
+        for days in windows:
+            a[f"Views_{days}d"] = account_views.get(days, 0)
+
+    demographics_by_account = content_store.get_latest_account_demographics(client)
+    for a in accounts:
+        raw = demographics_by_account.get((a["Platform"], a["Account_Username"]))
+        a["Demographics"] = _format_demographics(raw) if raw else None
+
+    order = {key: i for i, key in enumerate(account_keys)}
+    accounts.sort(key=lambda a: order.get((a["Platform"], a["Account_Username"]), 0))
+
+    totals = {"Followers": 0, "Views_30d": 0, "Views_90d": 0, "Views_270d": 0}
+    for a in accounts:
+        totals["Followers"] += a.get("Followers") or 0
+        for days in windows:
+            totals[f"Views_{days}d"] += a.get(f"Views_{days}d") or 0
+
+    partnerships = [{"Partnership": p, **get_partnership_report(client, p)} for p in report["Partnerships"]]
+
+    return {
+        "recipient_name": report["Recipient_Name"],
+        "note": report["Note"],
+        "accounts": accounts,
+        "totals": totals,
+        "metrics": set(report["Metrics"]),
+        "partnerships": partnerships,
+        "created_at": report["Created_At"],
+        "created_display": format_last_updated(report["Created_At"]),
+    }
+
+
 _STORY_INT_FIELDS = {"Views", "Likes", "Shares", "Sticker_Taps", "Replies"}
 
 

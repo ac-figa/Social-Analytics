@@ -1,43 +1,6 @@
 {% extends "base_shell.html" %}
 {% block title %}Export{% endblock %}
-
-{% macro checklist_dropdown(field_id, field_name, options, selected, all_label) %}
-  {% set total = options|length %}
-  {% set sel_count = selected|length %}
-  <div class="cdrop" data-cdrop id="{{ field_id }}" data-cdrop-all-label="{{ all_label }}">
-    <button type="button" class="field-input cdrop-toggle">
-      <span class="cdrop-toggle-label">
-        {%- if total == 0 -%}
-          None yet
-        {%- elif sel_count == 0 or sel_count == total -%}
-          {{ all_label }}
-        {%- elif sel_count == 1 -%}
-          {{ selected[0] }}
-        {%- else -%}
-          {{ sel_count }} selected
-        {%- endif -%}
-      </span>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="cdrop-panel" hidden>
-      {% if not options %}
-        <p class="cdrop-empty">None yet.</p>
-      {% else %}
-        <label class="cdrop-option cdrop-select-all">
-          <input type="checkbox" data-cdrop-all>
-          <span>Select All</span>
-        </label>
-        <div class="cdrop-divider"></div>
-        {% for value, label in options %}
-          <label class="cdrop-option">
-            <input type="checkbox" class="cdrop-item" name="{{ field_name }}" value="{{ value }}" {{ 'checked' if not selected or value in selected }}>
-            <span>{{ label }}</span>
-          </label>
-        {% endfor %}
-      {% endif %}
-    </div>
-  </div>
-{% endmacro %}
+{% import "_macros.html" as macros %}
 
 {% block content %}
   <div class="page-head">
@@ -99,19 +62,19 @@
 
       <div class="filter-field">
         <label class="filter-field-label">Accounts</label>
-        {{ checklist_dropdown('f-accounts', 'accounts', account_options, selected_accounts, 'All Accounts') }}
+        {{ macros.checklist_dropdown('f-accounts', 'accounts', account_options, selected_accounts, 'All Accounts') }}
         <p class="filter-hint">All accounts included by default.</p>
       </div>
 
       <div class="filter-field">
         <label class="filter-field-label">Partnerships</label>
-        {{ checklist_dropdown('f-partnerships', 'partnerships', partnership_options, selected_partnerships, 'All Partnerships') }}
+        {{ macros.checklist_dropdown('f-partnerships', 'partnerships', partnership_options, selected_partnerships, 'All Partnerships') }}
         <p class="filter-hint">All partnerships included by default.</p>
       </div>
 
       <div class="filter-field">
         <label class="filter-field-label">Topics</label>
-        {{ checklist_dropdown('f-topics', 'topics', topic_options, selected_topics, 'All Topics') }}
+        {{ macros.checklist_dropdown('f-topics', 'topics', topic_options, selected_topics, 'All Topics') }}
         <p class="filter-hint">All topics included by default.</p>
       </div>
     </div>
@@ -172,66 +135,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    var drops = Array.prototype.slice.call(document.querySelectorAll('[data-cdrop]'));
-
-    function closeAll() {
-      drops.forEach(function (d) {
-        d.classList.remove('is-open');
-        d.querySelector('.cdrop-panel').hidden = true;
-      });
-    }
-
-    drops.forEach(function (drop) {
-      var toggle = drop.querySelector('.cdrop-toggle');
-      var panel = drop.querySelector('.cdrop-panel');
-      var labelEl = drop.querySelector('.cdrop-toggle-label');
-      var allLabel = drop.getAttribute('data-cdrop-all-label') || 'All';
-      var allBox = drop.querySelector('[data-cdrop-all]');
-      var itemBoxes = Array.prototype.slice.call(drop.querySelectorAll('.cdrop-item'));
-
-      function updateLabel() {
-        var checked = itemBoxes.filter(function (b) { return b.checked; });
-        if (checked.length === 0 || checked.length === itemBoxes.length) {
-          labelEl.textContent = allLabel;
-        } else if (checked.length === 1) {
-          labelEl.textContent = checked[0].nextElementSibling.textContent;
-        } else {
-          labelEl.textContent = checked.length + ' selected';
-        }
-        if (allBox) {
-          allBox.checked = checked.length === itemBoxes.length || checked.length === 0;
-          allBox.indeterminate = checked.length > 0 && checked.length < itemBoxes.length;
-        }
-      }
-
-      if (allBox) {
-        allBox.addEventListener('change', function () {
-          itemBoxes.forEach(function (b) { b.checked = allBox.checked; });
-          updateLabel();
-        });
-      }
-      itemBoxes.forEach(function (b) { b.addEventListener('change', updateLabel); });
-
-      toggle.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var isOpen = drop.classList.contains('is-open');
-        closeAll();
-        if (!isOpen) {
-          drop.classList.add('is-open');
-          panel.hidden = false;
-        }
-      });
-      panel.addEventListener('click', function (e) { e.stopPropagation(); });
-
-      updateLabel();
-    });
-
-    document.addEventListener('click', closeAll);
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeAll();
-    });
-  });
-</script>
+{% include "_checklist_dropdown.js.html" %}
 {% endblock %}

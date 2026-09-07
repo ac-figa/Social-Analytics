@@ -1,0 +1,30 @@
+{% extends "base_shell.html" %}
+{% block title %}Shareable Reports{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Shareable Reports</h1>
+      <p class="page-subtitle">Custom Media Kit links built for one specific brand or recipient — pick the accounts, metrics, and Partnership highlights to include, then share the link (or print it to PDF).</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('new_media_kit_report') }}">New Report</a>
+  </div>
+
+  <div class="plist">
+    {% for r in reports %}
+      <div class="pnr-card">
+        <div class="pnr-card-header">
+          <h2><a href="{{ url_for('public_media_kit_report', token=r.Share_Token) }}" target="_blank" rel="noopener">{{ r.Recipient_Name }}</a></h2>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pnr-count">{{ r.Accounts|length }} account{{ '' if r.Accounts|length == 1 else 's' }}{% if r.Partnerships %} · {{ r.Partnerships|length }} partnership{{ '' if r.Partnerships|length == 1 else 's' }}{% endif %}</span>
+            <form method="post" action="{{ url_for('delete_media_kit_report', report_id=r.Report_ID) }}" onsubmit="return confirm('Delete this report? Its share link will stop working.');">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </div>
+        </div>
+        <p class="page-subtitle" style="margin:6px 0 0;">Created {{ r.Created_At.strftime('%b %-d, %Y') if r.Created_At else '' }} · <a href="{{ url_for('public_media_kit_report', token=r.Share_Token) }}" target="_blank" rel="noopener">{{ url_for('public_media_kit_report', token=r.Share_Token, _external=True) }}</a></p>
+      </div>
+    {% else %}
+      <p class="db-empty">No shareable reports yet — click "New Report" to build one for a specific brand.</p>
+    {% endfor %}
+  </div>
+{% endblock %}

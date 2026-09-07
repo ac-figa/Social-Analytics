@@ -1,0 +1,67 @@
+{# Shared behavior for macros.checklist_dropdown() -- include inside a page's own {% block scripts %}. #}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var drops = Array.prototype.slice.call(document.querySelectorAll('[data-cdrop]'));
+
+    function closeAll() {
+      drops.forEach(function (d) {
+        d.classList.remove('is-open');
+        d.querySelector('.cdrop-panel').hidden = true;
+      });
+    }
+
+    drops.forEach(function (drop) {
+      var toggle = drop.querySelector('.cdrop-toggle');
+      var panel = drop.querySelector('.cdrop-panel');
+      var labelEl = drop.querySelector('.cdrop-toggle-label');
+      var allLabel = drop.getAttribute('data-cdrop-all-label') || 'All';
+      var defaultAll = drop.getAttribute('data-cdrop-default-all') !== 'false';
+      var allBox = drop.querySelector('[data-cdrop-all]');
+      var itemBoxes = Array.prototype.slice.call(drop.querySelectorAll('.cdrop-item'));
+
+      function updateLabel() {
+        var checked = itemBoxes.filter(function (b) { return b.checked; });
+        var isAll = checked.length === itemBoxes.length || (checked.length === 0 && defaultAll);
+        if (isAll) {
+          labelEl.textContent = allLabel;
+        } else if (checked.length === 0) {
+          labelEl.textContent = 'None selected';
+        } else if (checked.length === 1) {
+          labelEl.textContent = checked[0].nextElementSibling.textContent;
+        } else {
+          labelEl.textContent = checked.length + ' selected';
+        }
+        if (allBox) {
+          allBox.checked = isAll;
+          allBox.indeterminate = checked.length > 0 && checked.length < itemBoxes.length;
+        }
+      }
+
+      if (allBox) {
+        allBox.addEventListener('change', function () {
+          itemBoxes.forEach(function (b) { b.checked = allBox.checked; });
+          updateLabel();
+        });
+      }
+      itemBoxes.forEach(function (b) { b.addEventListener('change', updateLabel); });
+
+      toggle.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var isOpen = drop.classList.contains('is-open');
+        closeAll();
+        if (!isOpen) {
+          drop.classList.add('is-open');
+          panel.hidden = false;
+        }
+      });
+      panel.addEventListener('click', function (e) { e.stopPropagation(); });
+
+      updateLabel();
+    });
+
+    document.addEventListener('click', closeAll);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeAll();
+    });
+  });
+</script>

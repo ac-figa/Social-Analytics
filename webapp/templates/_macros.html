@@ -1,0 +1,42 @@
+{# Shared macros for internal dashboard filter/builder forms (Export, Media Kit Reports). #}
+
+{% macro checklist_dropdown(field_id, field_name, options, selected, all_label, default_all=True) %}
+  {% set total = options|length %}
+  {% set sel_count = selected|length %}
+  {% set effectively_all = (sel_count == 0 and default_all) or sel_count == total %}
+  <div class="cdrop" data-cdrop data-cdrop-default-all="{{ 'true' if default_all else 'false' }}" id="{{ field_id }}" data-cdrop-all-label="{{ all_label }}">
+    <button type="button" class="field-input cdrop-toggle">
+      <span class="cdrop-toggle-label">
+        {%- if total == 0 -%}
+          None yet
+        {%- elif sel_count == 0 and not default_all -%}
+          None selected
+        {%- elif effectively_all -%}
+          {{ all_label }}
+        {%- elif sel_count == 1 -%}
+          {{ selected[0] }}
+        {%- else -%}
+          {{ sel_count }} selected
+        {%- endif -%}
+      </span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="cdrop-panel" hidden>
+      {% if not options %}
+        <p class="cdrop-empty">None yet.</p>
+      {% else %}
+        <label class="cdrop-option cdrop-select-all">
+          <input type="checkbox" data-cdrop-all>
+          <span>Select All</span>
+        </label>
+        <div class="cdrop-divider"></div>
+        {% for value, label in options %}
+          <label class="cdrop-option">
+            <input type="checkbox" class="cdrop-item" name="{{ field_name }}" value="{{ value }}" {{ 'checked' if (default_all and not selected) or value in selected }}>
+            <span>{{ label }}</span>
+          </label>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}

@@ -209,6 +209,32 @@ STORIES_SCHEMA = [
     bigquery.SchemaField("Updated_At", "TIMESTAMP"),
 ]
 
+# A saved, shareable Media Kit configuration built for one specific brand
+# pitch -- which accounts to show, which metrics to show for them, and
+# which Partnerships to summarize as case studies. Unlike Partnerships/
+# Topics (whose report content is entirely auto-derived from what's
+# already classified) the selection itself is the point here: someone
+# deliberately curates a subset once and shares it, so the config has to
+# be stored, not just cached. Share_Token is generated immediately on
+# creation (unlike get_or_create_share_token()'s lazy pattern) since
+# creating a report only ever happens in order to hand someone a link.
+# Accounts/Metrics/Partnerships are stored as JSON strings (matching
+# account_demographics' Age_Gender_JSON/Country_JSON/City_JSON
+# convention) rather than BigQuery REPEATED columns, for consistency
+# with how every other structured-list column in this schema is stored.
+MEDIA_KIT_REPORTS_TABLE = "media_kit_reports"
+
+MEDIA_KIT_REPORTS_SCHEMA = [
+    bigquery.SchemaField("Report_ID", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Recipient_Name", "STRING"),
+    bigquery.SchemaField("Note", "STRING"),
+    bigquery.SchemaField("Accounts_JSON", "STRING"),
+    bigquery.SchemaField("Metrics_JSON", "STRING"),
+    bigquery.SchemaField("Partnerships_JSON", "STRING"),
+    bigquery.SchemaField("Created_At", "TIMESTAMP"),
+    bigquery.SchemaField("Share_Token", "STRING", mode="REQUIRED"),
+]
+
 _CONTENT_ITEMS_UPDATE_COLUMNS = [f.name for f in CONTENT_ITEMS_SCHEMA if f.name != "Content_ID"]
 
 
@@ -243,6 +269,7 @@ def ensure_schema(client: bigquery.Client) -> None:
         (STORIES_TABLE, STORIES_SCHEMA),
         (TOPICS_TABLE, TOPICS_SCHEMA),
         (CONTENT_GROUP_TOPICS_TABLE, CONTENT_GROUP_TOPICS_SCHEMA),
+        (MEDIA_KIT_REPORTS_TABLE, MEDIA_KIT_REPORTS_SCHEMA),
     ):
         table_id = _table_ref(name)
         try:
@@ -1802,6 +1829,86 @@ def update_story(client: bigquery.Client, story_id: str, fields: dict) -> None:
     WHERE Story_ID = @story_id
     """
     client.query(query, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
+
+
+def _decode_media_kit_report_row(row: dict) -> dict:
+    row["Accounts"] = json.loads(row.pop("Accounts_JSON") or "[]")
+    row["Metrics"] = json.loads(row.pop("Metrics_JSON") or "[]")
+    row["Partnerships"] = json.loads(row.pop("Partnerships_JSON") or "[]")
+    return row
+
+
+def create_media_kit_report(
+    client: bigquery.Client, recipient_name: str, note: str, accounts: list, metrics: list, partnerships: list
+) -> str:
+    """Saves a new Media Kit report configuration and returns its share
+    token -- see MEDIA_KIT_REPORTS_TABLE's docstring for why this issues
+    the token immediately rather than lazily like get_or_create_share_
+    token(). accounts: [{"Platform": ..., "Account_Username": ...}, ...]."""
+    report_id = str(uuid.uuid4())
+    token = secrets.token_urlsafe(24)
+    query = f"""
+    INSERT INTO `{_table_ref(MEDIA_KIT_REPORTS_TABLE)}`
+      (Report_ID, Recipient_Name, Note, Accounts_JSON, Metrics_JSON, Partnerships_JSON, Created_At, Share_Token)
+    VALUES (@report_id, @recipient_name, @note, @accounts_json, @metrics_json, @partnerships_json, CURRENT_TIMESTAMP(), @token)
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("report_id", "STRING", report_id),
+                bigquery.ScalarQueryParameter("recipient_name", "STRING", recipient_name),
+                bigquery.ScalarQueryParameter("note", "STRING", note),
+                bigquery.ScalarQueryParameter("accounts_json", "STRING", json.dumps(accounts)),
+                bigquery.ScalarQueryParameter("metrics_json", "STRING", json.dumps(metrics)),
+                bigquery.ScalarQueryParameter("partnerships_json", "STRING", json.dumps(partnerships)),
+                bigquery.ScalarQueryParameter("token", "STRING", token),
+            ]
+        ),
+    ).result()
+    return token
+
+
+def list_media_kit_reports(client: bigquery.Client) -> list:
+    """Every saved report, newest first, JSON-decoded -- the Media Kit
+    Reports list page."""
+    query = f"""
+    SELECT Report_ID, Recipient_Name, Note, Accounts_JSON, Metrics_JSON, Partnerships_JSON, Created_At, Share_Token
+    FROM `{_table_ref(MEDIA_KIT_REPORTS_TABLE)}`
+    ORDER BY Created_At DESC
+    """
+    return [_decode_media_kit_report_row(dict(r)) for r in client.query(query).result()]
+
+
+def get_media_kit_report_by_token(client: bigquery.Client, token: str):
+    """One report's saved config, JSON-decoded, or None -- backs the
+    public /media-kit-report/<token> route, which has no login and so
+    must fail closed (None -> 404) on an unrecognized token, same as
+    get_partnership_by_share_token()."""
+    rows = list(
+        client.query(
+            f"""
+            SELECT Report_ID, Recipient_Name, Note, Accounts_JSON, Metrics_JSON, Partnerships_JSON, Created_At, Share_Token
+            FROM `{_table_ref(MEDIA_KIT_REPORTS_TABLE)}`
+            WHERE Share_Token = @token
+            """,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("token", "STRING", token)]
+            ),
+        ).result()
+    )
+    if not rows:
+        return None
+    return _decode_media_kit_report_row(dict(rows[0]))
+
+
+def delete_media_kit_report(client: bigquery.Client, report_id: str) -> None:
+    client.query(
+        f"DELETE FROM `{_table_ref(MEDIA_KIT_REPORTS_TABLE)}` WHERE Report_ID = @report_id",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("report_id", "STRING", report_id)]
+        ),
+    ).result()
 
 
 def delete_story(client: bigquery.Client, story_id: str) -> None:
