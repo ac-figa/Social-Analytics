@@ -149,7 +149,7 @@ def run(full_refresh: bool = False) -> int:
     # leaving them stuck as Active forever.
     active_ids = [vid for vid in all_video_ids if vid not in orphan_video_ids]
     bigquery_store.mark_missing_as_deleted(bq_client, active_ids)
-    _sync_to_shared_content_layer(rows, page_info)
+    _sync_to_shared_content_layer(rows, page_info, client)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()
     history_rows = [transform.build_history_row(r, snapshot_date) for r in rows]
@@ -170,7 +170,7 @@ def run(full_refresh: bool = False) -> int:
     return 0
 
 
-def _sync_to_shared_content_layer(rows: list, page_info: dict) -> None:
+def _sync_to_shared_content_layer(rows: list, page_info: dict, client: FacebookGraphClient) -> None:
     """See instagramanalyticspipeline/src/pipeline.py's twin of this
     function for the full rationale -- best-effort, never fails this
     pipeline's own successful Facebook ingestion. Also records today's
@@ -202,6 +202,17 @@ def _sync_to_shared_content_layer(rows: list, page_info: dict) -> None:
         content_store.record_account_stat(
             shared_client, "Facebook", page_info.get("name"),
             page_info.get("id"), page_info.get("followers_count"),
+        )
+
+        # Experimental -- see FacebookGraphClient.get_page_fan_demographics()'s
+        # docstring. Meta may or may not expose follower_demographics for
+        # Pages; this is best-effort and logs a warning per breakdown rather
+        # than failing the sync if it's rejected.
+        demographics = client.get_page_fan_demographics()
+        content_store.record_account_demographics(
+            shared_client, "Facebook", page_info.get("name"), page_info.get("id"),
+            demographics.get("age_gender", []), demographics.get("country", []),
+            demographics.get("city", []),
         )
     except Exception as e:  # noqa: BLE001 -- shared-layer issues must not fail this pipeline
         log.warning("Cross-platform content sync failed (non-fatal): %s", e)
