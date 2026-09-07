@@ -160,7 +160,7 @@ def run(full_refresh: bool = False) -> int:
     # would get wrongly marked Deleted_or_Unavailable. Scoped to this
     # account's Account_ID -- see mark_missing_as_deleted()'s docstring.
     bigquery_store.mark_missing_as_deleted(bq_client, all_media_ids, account_info["id"])
-    _sync_to_shared_content_layer(rows, account_info)
+    _sync_to_shared_content_layer(rows, account_info, client)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()
     history_rows = [transform.build_history_row(r, snapshot_date) for r in rows]
@@ -179,14 +179,14 @@ def run(full_refresh: bool = False) -> int:
     return 0
 
 
-def _sync_to_shared_content_layer(rows: list, account_info: dict) -> None:
+def _sync_to_shared_content_layer(rows: list, account_info: dict, client: InstagramGraphClient) -> None:
     """Mirrors this run's rows into the shared cross-platform content_items
     table and runs auto-matching over whatever's newly ungrouped, so this
     account's posts can be linked to the same content on YouTube/TikTok/
-    Facebook. Also records today's follower-count snapshot for the media
-    kit. Best-effort: a failure here (e.g. the shared dataset isn't
-    provisioned yet) must never fail the Instagram-only ingestion that
-    already succeeded above.
+    Facebook. Also records today's follower-count snapshot and audience
+    demographics for the media kit. Best-effort: a failure here (e.g. the
+    shared dataset isn't provisioned yet) must never fail the
+    Instagram-only ingestion that already succeeded above.
     """
     try:
         from shared.src import content_store, run_matching
@@ -211,6 +211,12 @@ def _sync_to_shared_content_layer(rows: list, account_info: dict) -> None:
         content_store.record_account_stat(
             shared_client, "Instagram", account_info.get("username"),
             account_info.get("id"), account_info.get("followers_count"),
+        )
+
+        demographics = client.get_follower_demographics()
+        content_store.record_account_demographics(
+            shared_client, "Instagram", account_info.get("username"), account_info.get("id"),
+            demographics.get("age_gender", []), demographics.get("country", []), demographics.get("city", []),
         )
     except Exception as e:  # noqa: BLE001 -- shared-layer issues must not fail this pipeline
         log.warning("Cross-platform content sync failed (non-fatal): %s", e)

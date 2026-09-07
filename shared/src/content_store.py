@@ -17,6 +17,7 @@ platforms and report on it per-partnership.
 Same upsert pattern as the Instagram pipeline's bigquery_store.py:
 truncate-and-load a staging table, then MERGE.
 """
+import json
 import logging
 import re
 import secrets
@@ -157,6 +158,28 @@ ACCOUNT_STATS_SCHEMA = [
     bigquery.SchemaField("Captured_At", "TIMESTAMP"),
 ]
 
+# Audience demographics -- currently Instagram-only (see
+# instagramanalyticspipeline/src/graph_client.py's get_follower_
+# demographics()). Each breakdown is stored as a JSON string of the
+# raw [{"dimension_values": [...], "value": N}, ...] rows straight from
+# the Graph API rather than a normalized column-per-bucket schema,
+# since the set of age/country/city buckets a real audience touches
+# isn't fixed -- the webapp layer parses and labels it for display.
+# Same MERGE-on-Snapshot_Date upsert pattern as account_stats, so
+# re-running a sync same-day updates today's snapshot in place.
+ACCOUNT_DEMOGRAPHICS_TABLE = "account_demographics"
+
+ACCOUNT_DEMOGRAPHICS_SCHEMA = [
+    bigquery.SchemaField("Platform", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Account_Username", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Account_ID", "STRING"),
+    bigquery.SchemaField("Age_Gender_JSON", "STRING"),
+    bigquery.SchemaField("Country_JSON", "STRING"),
+    bigquery.SchemaField("City_JSON", "STRING"),
+    bigquery.SchemaField("Snapshot_Date", "DATE", mode="REQUIRED"),
+    bigquery.SchemaField("Captured_At", "TIMESTAMP"),
+]
+
 # Stories (Instagram/Facebook/TikTok) aren't worth pulling from each
 # platform's API -- they expire in 24h and the volume posted under a
 # partnership is low -- so this is manual entry only, no pipeline writes
@@ -216,6 +239,7 @@ def ensure_schema(client: bigquery.Client) -> None:
         (PARTNERSHIPS_TABLE, PARTNERSHIPS_SCHEMA),
         (PARTNERSHIP_CONTENT_TYPES_TABLE, PARTNERSHIP_CONTENT_TYPES_SCHEMA),
         (ACCOUNT_STATS_TABLE, ACCOUNT_STATS_SCHEMA),
+        (ACCOUNT_DEMOGRAPHICS_TABLE, ACCOUNT_DEMOGRAPHICS_SCHEMA),
         (STORIES_TABLE, STORIES_SCHEMA),
         (TOPICS_TABLE, TOPICS_SCHEMA),
         (CONTENT_GROUP_TOPICS_TABLE, CONTENT_GROUP_TOPICS_SCHEMA),
@@ -1490,6 +1514,72 @@ def record_account_stat(
             ]
         ),
     ).result()
+
+
+def record_account_demographics(
+    client: bigquery.Client, platform: str, account_username: str, account_id,
+    age_gender: list, country: list, city: list,
+) -> None:
+    """Upserts today's audience-demographics snapshot for one account --
+    same MERGE-on-Snapshot_Date pattern as record_account_stat(), so
+    re-running a sync same-day updates today's snapshot instead of
+    piling up duplicates. age_gender/country/city are each the raw list
+    of {"dimension_values": [...], "value": N} rows from the Graph API
+    (see graph_client.get_follower_demographics()); stored as JSON
+    strings since the actual buckets present aren't fixed."""
+    now = datetime.now(timezone.utc)
+    query = f"""
+    MERGE `{_table_ref(ACCOUNT_DEMOGRAPHICS_TABLE)}` T
+    USING (SELECT @platform AS Platform, @account_username AS Account_Username, @snapshot_date AS Snapshot_Date) S
+    ON T.Platform = S.Platform AND T.Account_Username = S.Account_Username AND T.Snapshot_Date = S.Snapshot_Date
+    WHEN MATCHED THEN UPDATE SET
+      T.Account_ID = @account_id, T.Age_Gender_JSON = @age_gender_json,
+      T.Country_JSON = @country_json, T.City_JSON = @city_json, T.Captured_At = @captured_at
+    WHEN NOT MATCHED THEN
+      INSERT (Platform, Account_Username, Account_ID, Age_Gender_JSON, Country_JSON, City_JSON, Snapshot_Date, Captured_At)
+      VALUES (@platform, @account_username, @account_id, @age_gender_json, @country_json, @city_json, @snapshot_date, @captured_at)
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("platform", "STRING", platform),
+                bigquery.ScalarQueryParameter("account_username", "STRING", account_username),
+                bigquery.ScalarQueryParameter("account_id", "STRING", account_id),
+                bigquery.ScalarQueryParameter("age_gender_json", "STRING", json.dumps(age_gender)),
+                bigquery.ScalarQueryParameter("country_json", "STRING", json.dumps(country)),
+                bigquery.ScalarQueryParameter("city_json", "STRING", json.dumps(city)),
+                bigquery.ScalarQueryParameter("snapshot_date", "DATE", now.date().isoformat()),
+                bigquery.ScalarQueryParameter("captured_at", "TIMESTAMP", now.isoformat()),
+            ]
+        ),
+    ).result()
+
+
+def get_latest_account_demographics(client: bigquery.Client) -> dict:
+    """The most recent demographics snapshot per (Platform,
+    Account_Username), JSON-decoded -- {(platform, account_username):
+    {"age_gender": [...], "country": [...], "city": [...],
+    "snapshot_date": date}}. Accounts with no snapshot yet (or below
+    Meta's 100-follower minimum) simply have no entry here."""
+    query = f"""
+    SELECT Platform, Account_Username, Age_Gender_JSON, Country_JSON, City_JSON, Snapshot_Date
+    FROM `{_table_ref(ACCOUNT_DEMOGRAPHICS_TABLE)}`
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY Platform, Account_Username ORDER BY Snapshot_Date DESC) = 1
+    """
+    result = {}
+    for r in client.query(query).result():
+        try:
+            age_gender = json.loads(r["Age_Gender_JSON"]) if r["Age_Gender_JSON"] else []
+            country = json.loads(r["Country_JSON"]) if r["Country_JSON"] else []
+            city = json.loads(r["City_JSON"]) if r["City_JSON"] else []
+        except (TypeError, ValueError):
+            age_gender, country, city = [], [], []
+        result[(r["Platform"], r["Account_Username"])] = {
+            "age_gender": age_gender, "country": country, "city": city,
+            "snapshot_date": r["Snapshot_Date"],
+        }
+    return result
 
 
 def get_latest_account_stats(client: bigquery.Client) -> list:

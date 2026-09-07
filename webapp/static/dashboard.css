@@ -448,6 +448,19 @@ table.dtable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .mk-views-tile .l { display: block; font-size: 10px; color: var(--db-muted); margin-top: 2px; }
 .mk-updated { margin: 0; font-size: 11px; color: var(--db-muted); }
 
+.mk-demographics { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--db-line); }
+.mk-demo-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--db-muted); margin: 0 0 8px; }
+.mk-demo-label:not(:first-child) { margin-top: 12px; }
+.mk-bar-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; margin-bottom: 5px; }
+.mk-bar-row .mk-bar-tag { width: 46px; flex-shrink: 0; color: var(--db-ink-soft); font-weight: 600; }
+.mk-bar-track { flex: 1; height: 7px; border-radius: 999px; background: var(--db-paper); overflow: hidden; }
+.mk-bar-fill { height: 100%; background: var(--db-accent); border-radius: 999px; }
+.mk-bar-pct { width: 34px; flex-shrink: 0; text-align: right; color: var(--db-muted); font-variant-numeric: tabular-nums; }
+.mk-geo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mk-geo-list li { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--db-ink-soft); }
+.mk-geo-list .pct { color: var(--db-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.mk-demo-empty { font-size: 11px; color: var(--db-muted); font-style: italic; }
+
 /* ---------- sync ---------- */
 .db-sync-status { margin-top: 20px; }
 .db-sync-log {
