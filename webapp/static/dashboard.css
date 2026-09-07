@@ -262,6 +262,53 @@
 .custom-dates .field-input { width: auto; flex: 1; min-width: 0; }
 .filter-actions { display: flex; gap: 8px; padding-top: 14px; border-top: 1px solid var(--db-line); }
 
+/* ---------- checklist dropdown (Export builder's Partnerships/Topics/Accounts) ---------- */
+.cdrop { position: relative; }
+.cdrop-toggle {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  appearance: none;
+}
+.cdrop-toggle-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cdrop-toggle svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--db-muted); transition: transform 0.15s; }
+.cdrop.is-open .cdrop-toggle { border-color: var(--db-focus); }
+.cdrop.is-open .cdrop-toggle svg { transform: rotate(180deg); }
+.cdrop-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--db-surface);
+  border: 1px solid var(--db-line-strong);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(20, 24, 33, 0.14);
+  padding: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.cdrop-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--db-ink-soft);
+  cursor: pointer;
+}
+.cdrop-option:hover { background: var(--db-paper); }
+.cdrop-option input[type="checkbox"] { accent-color: var(--db-accent); width: 14px; height: 14px; flex-shrink: 0; }
+.cdrop-select-all { font-weight: 700; color: var(--db-ink); }
+.cdrop-divider { height: 1px; background: var(--db-line); margin: 4px 2px; }
+.cdrop-empty { padding: 8px; font-size: 12px; color: var(--db-muted); font-style: italic; margin: 0; }
+
 /* ---------- classify queue cards ---------- */
 .bulk-bar {
   display: flex;
