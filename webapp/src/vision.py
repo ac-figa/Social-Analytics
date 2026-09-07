@@ -65,10 +65,9 @@ _SCHEMA = {
             "description": (
                 "One entry per named country shown, each with its percentage, as an "
                 "ISO 3166-1 alpha-2 country code (e.g. \"US\", \"IT\", \"GB\"), not the "
-                "country name. If the chart also shows a catch-all 'Others'/'Other' "
-                "rollup row (the remainder not broken out by country), include it too "
-                "with the literal label \"Others\" -- needed to preserve the true total "
-                "audience share, not just the share among named countries."
+                "country name. Skip any catch-all 'Others'/'Other' rollup row -- the "
+                "backend computes that remainder itself from what's left out of 100%, "
+                "so it must not be included here (that would double-count it)."
             ),
             "items": {
                 "type": "object",
@@ -100,7 +99,9 @@ _PROMPT = (
     "guessing a split that isn't in the data.\n"
     "- Countries: give the ISO 3166-1 alpha-2 country code (e.g. \"US\", \"IT\", \"GB\", "
     "\"CA\"), not the country name -- read the country name off the chart, then convert "
-    "it to its two-letter code.\n"
+    "it to its two-letter code. Only include countries individually named/broken out on "
+    "the chart -- do not include a catch-all 'Others'/'Other' rollup row, and do not try "
+    "to estimate or account for any remainder yourself.\n"
     "- Gender: use \"Male\", \"Female\", \"Other\" (or whatever categories are actually "
     "shown).\n"
     "If a section isn't present in the screenshot, return an empty list for it."

@@ -847,6 +847,26 @@ def _format_demographics(raw: dict) -> dict:
     }
 
 
+def _with_others_remainder(items: list, epsilon: float = 0.5) -> list:
+    """Given [{"label", "pct"}, ...] read off a screenshot's "top N"
+    locations list, appends a synthetic "Others" entry for whatever
+    percentage is left over from 100 -- computed here in Python rather
+    than trusting the vision model's arithmetic (or the screenshot itself:
+    plenty of platforms, Facebook's demographics page included, show a
+    top-N countries list with no catch-all row at all, so the shown
+    values reliably do NOT sum to 100%). Skipping this was exactly what
+    silently inflated every shown percentage before this existed -- e.g.
+    a country truly at 53.4% of the whole audience read as 57.9% once
+    the ~8% belonging to smaller, unlisted countries vanished from the
+    denominator. epsilon: skip the row for trivial/rounding-noise
+    remainders instead of adding a spurious "Others: 0.1%"."""
+    total_shown = sum(item["pct"] for item in items)
+    leftover = round(100 - total_shown, 1)
+    if leftover > epsilon:
+        return items + [{"label": "Others", "pct": leftover}]
+    return items
+
+
 def record_demographics_from_screenshot(
     client: bigquery.Client, platform: str, account_username: str, image_bytes: bytes, media_type: str
 ) -> str:
@@ -868,9 +888,8 @@ def record_demographics_from_screenshot(
     ] + [
         {"dimension_values": ["", item["label"]], "value": item["pct"]} for item in parsed.get("gender") or []
     ]
-    country_rows = [
-        {"dimension_values": [item["label"]], "value": item["pct"]} for item in parsed.get("countries") or []
-    ]
+    countries = _with_others_remainder(parsed.get("countries") or [])
+    country_rows = [{"dimension_values": [item["label"]], "value": item["pct"]} for item in countries]
 
     account_id = next(
         (
