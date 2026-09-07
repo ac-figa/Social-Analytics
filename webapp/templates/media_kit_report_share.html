@@ -146,6 +146,7 @@
     font-family: "Anton", "Poppins", sans-serif; font-weight: 400; font-size: 30px; line-height: 1; margin: 0 0 3px;
   }
   .account-followers-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0 0 14px; }
+  .account-views-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0 0 8px; }
   .account-views { display: flex; gap: 10px; margin-bottom: 14px; }
   .account-views-tile { flex: 1; background: var(--paper); border-radius: 8px; padding: 8px 10px; text-align: center; }
   .account-views-tile .v { display: block; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
@@ -245,6 +246,7 @@
               {% endif %}
 
               {% if 'views_30d' in report.metrics or 'views_90d' in report.metrics or 'views_270d' in report.metrics %}
+                <p class="account-views-label">Views</p>
                 <div class="account-views">
                   {% if 'views_30d' in report.metrics %}<div class="account-views-tile"><span class="v">{{ (a.Views_30d or 0)|compact }}</span><span class="l">30d</span></div>{% endif %}
                   {% if 'views_90d' in report.metrics %}<div class="account-views-tile"><span class="v">{{ (a.Views_90d or 0)|compact }}</span><span class="l">90d</span></div>{% endif %}

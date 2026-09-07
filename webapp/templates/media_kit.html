@@ -43,6 +43,7 @@
             <span class="l">{{ 'Subscribers' if a.Platform == 'YouTube' else 'Followers' }}</span>
           </div>
 
+          <p class="mk-views-label">Views</p>
           <div class="mk-views">
             <div class="mk-views-tile">
               <span class="n">{{ '{:,}'.format(a.Views_30d) if a.Views_30d is not none else '—' }}</span>
