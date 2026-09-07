@@ -6,6 +6,14 @@ no demographics endpoint at all (TikTok, as of writing -- see
 tiktokpipeline/docs/SETUP.md's sibling investigation notes). Only ever
 called when config.ANTHROPIC_API_KEY is set; callers are expected to
 check that first.
+
+Age buckets and country labels are normalized in the prompt itself (see
+_PROMPT) to match the format Meta's own demographics API already
+returns for Instagram/Facebook -- bare hyphenated age ranges ("18-24",
+not "18-24 years old") and ISO 3166-1 alpha-2 country codes ("US", not
+"United States") -- so every account_demographics row in the system
+uses one consistent format regardless of source, and the Media Kit
+never needs per-platform display logic to paper over the difference.
 """
 import base64
 import json
@@ -37,7 +45,11 @@ _SCHEMA = {
         },
         "age": {
             "type": "array",
-            "description": "One entry per age bucket shown (e.g. 18-24, 25-34, 55+), each with its percentage.",
+            "description": (
+                "One entry per age bucket shown, each with its percentage. Normalize the "
+                "label to Meta's own bucket style (no 'years old' suffix, plain hyphenated "
+                "range) -- see the prompt for the exact set."
+            ),
             "items": {
                 "type": "object",
                 "properties": {
@@ -51,8 +63,10 @@ _SCHEMA = {
         "countries": {
             "type": "array",
             "description": (
-                "One entry per named country shown, each with its percentage. "
-                "Exclude any catch-all 'Others'/'Other' rollup row -- it isn't a real country."
+                "One entry per named country shown, each with its percentage, as an "
+                "ISO 3166-1 alpha-2 country code (e.g. \"US\", \"IT\", \"GB\"), not the "
+                "country name. Exclude any catch-all 'Others'/'Other' rollup row -- it "
+                "isn't a real country."
             ),
             "items": {
                 "type": "object",
@@ -72,11 +86,24 @@ _SCHEMA = {
 _PROMPT = (
     "This is a screenshot of a social platform's audience-demographics analytics "
     "page (Gender, Age, and Locations/Countries breakdowns, each shown as percentages). "
-    "Read the exact numbers off the charts and return them as structured data. "
-    "Use each label exactly as displayed (e.g. age buckets like \"18-24\" or \"55+\", "
-    "country names as shown). Skip any 'Others'/'Other' catch-all rollup row in the "
-    "locations list -- only include named countries. If a section isn't present in the "
-    "screenshot, return an empty list for it."
+    "Read the exact numbers off the charts and return them as structured data, "
+    "normalized to match how another platform's demographics API (Meta's) already "
+    "formats the same kind of data in this system, so every source lines up:\n"
+    "- Age buckets: use bare hyphenated ranges only, no \"years old\" suffix and no "
+    "extra spacing -- e.g. \"18-24\", \"25-34\", \"35-44\", \"45-54\". If the screenshot's "
+    "bucket exactly matches one of Meta's standard buckets (\"13-17\", \"18-24\", "
+    "\"25-34\", \"35-44\", \"45-54\", \"55-64\", \"65+\"), use that exact string. If the "
+    "platform groups its oldest bucket differently (e.g. a single \"55+\" instead of "
+    "splitting 55-64/65+), keep it as the plain range shown (\"55+\") rather than "
+    "guessing a split that isn't in the data.\n"
+    "- Countries: give the ISO 3166-1 alpha-2 country code (e.g. \"US\", \"IT\", \"GB\", "
+    "\"CA\"), not the country name -- read the country name off the chart, then convert "
+    "it to its two-letter code.\n"
+    "- Gender: use \"Male\", \"Female\", \"Other\" (or whatever categories are actually "
+    "shown).\n"
+    "Skip any 'Others'/'Other' catch-all rollup row in the locations list -- only include "
+    "named countries. If a section isn't present in the screenshot, return an empty list "
+    "for it."
 )
 
 
