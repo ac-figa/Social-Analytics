@@ -608,7 +608,77 @@ def get_media_kit(client: bigquery.Client, brand: str = None) -> dict:
         for days in windows:
             totals[f"Views_{days}d"] += a.get(f"Views_{days}d") or 0
 
+    demographics_by_account = content_store.get_latest_account_demographics(client)
+    for a in accounts:
+        raw = demographics_by_account.get((a["Platform"], a["Account_Username"]))
+        a["Demographics"] = _format_demographics(raw) if raw else None
+
     return {"accounts": accounts, "totals": totals, "brands": available_brands}
+
+
+_AGE_BUCKET_ORDER = ["13-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
+_GENDER_LABELS = {"M": "Male", "F": "Female", "U": "Other"}
+
+
+def _pct(value, total):
+    return round(value / total * 100, 1) if total else 0
+
+
+def _format_demographics(raw: dict) -> dict:
+    """Shapes content_store.get_latest_account_demographics()'s raw
+    per-account entry into what the Media Kit template needs: an age
+    breakdown in natural age order (not sorted by size), a gender split,
+    and top-5 country/city lists, each with a percentage of the total
+    audience that breakdown covers. Currently only ever populated for
+    Instagram accounts -- see instagramanalyticspipeline/src/graph_
+    client.py's get_follower_demographics()."""
+    age_totals: dict = {}
+    gender_totals: dict = {}
+    for row in raw.get("age_gender") or []:
+        dims = row.get("dimension_values") or []
+        value = row.get("value") or 0
+        if len(dims) >= 1:
+            age_totals[dims[0]] = age_totals.get(dims[0], 0) + value
+        if len(dims) >= 2:
+            gender_totals[dims[1]] = gender_totals.get(dims[1], 0) + value
+
+    age_total_sum = sum(age_totals.values())
+    gender_total_sum = sum(gender_totals.values())
+
+    def _age_sort_key(bucket):
+        try:
+            return (_AGE_BUCKET_ORDER.index(bucket),)
+        except ValueError:
+            return (len(_AGE_BUCKET_ORDER), bucket)
+
+    age_breakdown = [
+        {"label": bucket, "value": v, "pct": _pct(v, age_total_sum)}
+        for bucket, v in sorted(age_totals.items(), key=lambda kv: _age_sort_key(kv[0]))
+    ]
+    gender_breakdown = [
+        {"label": _GENDER_LABELS.get(g, g), "value": v, "pct": _pct(v, gender_total_sum)}
+        for g, v in sorted(gender_totals.items(), key=lambda kv: -kv[1])
+    ]
+
+    def _top_single(rows: list, limit: int = 5) -> list:
+        counts: dict = {}
+        for row in rows or []:
+            dims = row.get("dimension_values") or []
+            if not dims:
+                continue
+            counts[dims[0]] = counts.get(dims[0], 0) + (row.get("value") or 0)
+        total = sum(counts.values())
+        top = sorted(counts.items(), key=lambda kv: -kv[1])[:limit]
+        return [{"label": k, "value": v, "pct": _pct(v, total)} for k, v in top]
+
+    return {
+        "age_breakdown": age_breakdown,
+        "gender_breakdown": gender_breakdown,
+        "top_countries": _top_single(raw.get("country")),
+        "top_cities": _top_single(raw.get("city")),
+        "has_data": bool(age_totals or raw.get("country") or raw.get("city")),
+        "snapshot_date": raw.get("snapshot_date"),
+    }
 
 
 _STORY_INT_FIELDS = {"Views", "Likes", "Shares", "Sticker_Taps", "Replies"}

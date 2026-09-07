@@ -58,6 +58,54 @@
           </div>
 
           <p class="mk-updated">Updated {{ a.Snapshot_Date.strftime('%Y-%m-%d') if a.Snapshot_Date else '—' }}</p>
+
+          {% if a.Demographics %}
+            <div class="mk-demographics">
+              {% if not a.Demographics.has_data %}
+                <p class="mk-demo-empty">Not enough followers yet for audience demographics (Meta requires 100+).</p>
+              {% else %}
+                {% if a.Demographics.gender_breakdown %}
+                  <p class="mk-demo-label">Gender</p>
+                  {% for g in a.Demographics.gender_breakdown %}
+                    <div class="mk-bar-row">
+                      <span class="mk-bar-tag">{{ g.label }}</span>
+                      <span class="mk-bar-track"><span class="mk-bar-fill" style="width:{{ g.pct }}%;"></span></span>
+                      <span class="mk-bar-pct">{{ g.pct }}%</span>
+                    </div>
+                  {% endfor %}
+                {% endif %}
+
+                {% if a.Demographics.age_breakdown %}
+                  <p class="mk-demo-label">Age</p>
+                  {% for ag in a.Demographics.age_breakdown %}
+                    <div class="mk-bar-row">
+                      <span class="mk-bar-tag">{{ ag.label }}</span>
+                      <span class="mk-bar-track"><span class="mk-bar-fill" style="width:{{ ag.pct }}%;"></span></span>
+                      <span class="mk-bar-pct">{{ ag.pct }}%</span>
+                    </div>
+                  {% endfor %}
+                {% endif %}
+
+                {% if a.Demographics.top_countries %}
+                  <p class="mk-demo-label">Top Countries</p>
+                  <ul class="mk-geo-list">
+                    {% for c in a.Demographics.top_countries %}
+                      <li><span>{{ c.label }}</span><span class="pct">{{ c.pct }}%</span></li>
+                    {% endfor %}
+                  </ul>
+                {% endif %}
+
+                {% if a.Demographics.top_cities %}
+                  <p class="mk-demo-label">Top Cities</p>
+                  <ul class="mk-geo-list">
+                    {% for c in a.Demographics.top_cities %}
+                      <li><span>{{ c.label }}</span><span class="pct">{{ c.pct }}%</span></li>
+                    {% endfor %}
+                  </ul>
+                {% endif %}
+              {% endif %}
+            </div>
+          {% endif %}
         </div>
       {% endfor %}
     </div>

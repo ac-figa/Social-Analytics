@@ -149,6 +149,47 @@ class InstagramGraphClient:
         return self._get(self.ig_user_id, {"fields": "id,username,name,followers_count"})
 
     # ---------------------------------------------------------------- #
+    # Audience demographics (best-effort, account-level)
+    # ---------------------------------------------------------------- #
+    def get_follower_demographics(self) -> dict:
+        """Audience breakdown for this account: {"age_gender": [...],
+        "country": [...], "city": [...]}, each a list of
+        {"dimension_values": [...], "value": N} rows straight from the
+        API (age_gender's dimension_values is a 2-element [age, gender]
+        pair; country/city's is a single-element list) -- left in this
+        raw shape so the caller decides how to label/sort it rather than
+        this client guessing.
+
+        Best-effort per breakdown, not all-or-nothing: Meta requires at
+        least 100 followers before it returns follower_demographics at
+        all, so a small/newer account just gets an empty list for that
+        breakdown (logged, never raised) instead of failing the whole
+        sync -- same reasoning as get_collaborators(). This is a
+        periodically-refreshed snapshot of the CURRENT audience, not a
+        time series, so it's fetched once per sync alongside
+        get_account_info() rather than per-post."""
+        breakdowns = {"age_gender": "age,gender", "country": "country", "city": "city"}
+        result = {}
+        for key, breakdown in breakdowns.items():
+            try:
+                payload = self._get(
+                    f"{self.ig_user_id}/insights",
+                    {
+                        "metric": "follower_demographics",
+                        "period": "lifetime",
+                        "metric_type": "total_value",
+                        "breakdown": breakdown,
+                    },
+                )
+                result[key] = _extract_demographics_results(payload)
+            except (TokenExpiredError, RateLimitedError):
+                raise
+            except GraphAPIError as e:
+                log.warning("Follower demographics ('%s') unavailable: %s", breakdown, e)
+                result[key] = []
+        return result
+
+    # ---------------------------------------------------------------- #
     # Media listing
     # ---------------------------------------------------------------- #
     def get_all_media_ids(self) -> Iterator[dict]:
@@ -291,6 +332,27 @@ def _metrics_for(media_product_type: str) -> list:
     if media_product_type == "REELS":
         return REELS_INSIGHTS_METRICS
     return OTHER_INSIGHTS_METRICS
+
+
+def _extract_demographics_results(payload: dict) -> list:
+    """Pulls the [{"dimension_values": [...], "value": N}, ...] rows out
+    of a follower_demographics (metric_type=total_value, breakdown=...)
+    response. Written defensively -- returns [] rather than raising on
+    any shape this doesn't expect, since this is the one call in this
+    client without a locally-testable fixture to confirm the exact
+    response shape against; a parsing miss should degrade to "no
+    demographics this run", never break the sync."""
+    try:
+        data = payload.get("data", [])
+        if not data:
+            return []
+        breakdowns = data[0].get("total_value", {}).get("breakdowns", [])
+        if not breakdowns:
+            return []
+        return breakdowns[0].get("results", [])
+    except (AttributeError, IndexError, TypeError) as e:
+        log.warning("Unexpected follower_demographics response shape: %s", e)
+        return []
 
 
 def _extract_metric_value(metric_obj: dict):
