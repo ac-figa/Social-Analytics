@@ -38,6 +38,14 @@ ALLOWED_EMAILS = {
 }
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-only-insecure-key-change-me")
 
+# Powers the Media Kit's "Update from Screenshot" demographics uploader (see
+# src/vision.py) -- lets Claude read a platform's own in-app analytics
+# screenshot (TikTok's, currently, since TikTok exposes no API for this at
+# all) and turn it into the same account_demographics rows the API-driven
+# platforms populate automatically. Optional, like GOOGLE_CLIENT_ID -- the
+# upload control just hides itself when this is unset rather than failing.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+
 # Each platform's own dataset + classifications table + master table's ID
 # column -- used to propagate a group's Partnership/Content_Type down into
 # every member platform's own *_classifications table when the dashboard

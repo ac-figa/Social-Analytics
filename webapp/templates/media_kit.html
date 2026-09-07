@@ -106,8 +106,44 @@
               {% endif %}
             </div>
           {% endif %}
+
+          {% if demographics_upload_available %}
+            <div class="mk-demo-upload">
+              {% if not a.Demographics %}
+                <p class="mk-demo-empty">No demographics snapshot yet.</p>
+              {% endif %}
+              <form method="post" action="{{ url_for('upload_demographics_screenshot') }}" enctype="multipart/form-data" class="mk-demo-upload-form">
+                <input type="hidden" name="platform" value="{{ a.Platform }}">
+                <input type="hidden" name="account_username" value="{{ a.Account_Username }}">
+                <label class="mk-demo-upload-label">
+                  <input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp,image/gif" class="mk-demo-upload-input">
+                  <span class="btn btn-ghost btn-sm mk-demo-upload-btn">{{ 'Update from Screenshot' if a.Demographics else 'Add from Screenshot' }}</span>
+                </label>
+              </form>
+              <p class="mk-demo-upload-hint">Upload the platform's own analytics screenshot (Gender/Age/Locations) — Claude reads the numbers off it.</p>
+            </div>
+          {% endif %}
         </div>
       {% endfor %}
     </div>
   {% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if demographics_upload_available %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.mk-demo-upload-form').forEach(function (form) {
+      var input = form.querySelector('.mk-demo-upload-input');
+      var btn = form.querySelector('.mk-demo-upload-btn');
+      input.addEventListener('change', function () {
+        if (!input.files.length) return;
+        btn.textContent = 'Analyzing…';
+        btn.classList.add('is-busy');
+        form.submit();
+      });
+    });
+  });
+</script>
+{% endif %}
 {% endblock %}
