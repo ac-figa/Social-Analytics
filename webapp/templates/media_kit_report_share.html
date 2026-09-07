@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Media Kit{% if report.recipient_name %} — {{ report.recipient_name }}{% endif %} — The Bello Bros</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f7f4ec;
+    --surface: #ffffff;
+    --ink: #14140f;
+    --ink-soft: #423f36;
+    --muted: #8b8574;
+    --line: #e6e1d3;
+    --line-strong: #d3ccb8;
+    --accent: #1f4fd6;
+    --accent-deep: #13328f;
+    --accent-tint: #eaf0ff;
+    --good: #2f7d5a;
+    --focus: #14140f;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14140f;
+      --surface: #1f1e18;
+      --ink: #f4f2ea;
+      --ink-soft: #cdc8ba;
+      --muted: #948e7c;
+      --line: #34322a;
+      --line-strong: #454236;
+      --accent: #5b84ff;
+      --accent-deep: #8aa6ff;
+      --accent-tint: #1c2440;
+      --good: #6bc79a;
+      --focus: #f4f2ea;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14140f;
+    --surface: #1f1e18;
+    --ink: #f4f2ea;
+    --ink-soft: #cdc8ba;
+    --muted: #948e7c;
+    --line: #34322a;
+    --line-strong: #454236;
+    --accent: #5b84ff;
+    --accent-deep: #8aa6ff;
+    --accent-tint: #1c2440;
+    --good: #6bc79a;
+    --focus: #f4f2ea;
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Poppins", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+
+  .masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .wordmark { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .wordmark b { color: var(--ink); font-weight: 800; }
+  .masthead-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+  .updated-chip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .updated-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 18%, transparent); flex-shrink: 0;
+  }
+  .updated-chip strong { color: var(--ink-soft); font-weight: 600; }
+
+  .btn-print {
+    appearance: none; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft);
+    font-family: "Poppins", sans-serif; font-size: 12px; font-weight: 700; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+  }
+  .btn-print:hover { border-color: var(--accent); color: var(--ink); }
+
+  h1.title {
+    font-family: "Anton", "Poppins", sans-serif;
+    font-weight: 400;
+    text-transform: uppercase;
+    font-size: clamp(36px, 6vw, 56px);
+    line-height: 0.96;
+    letter-spacing: 0.002em;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+  .note { font-size: 14.5px; color: var(--ink-soft); line-height: 1.6; margin: 0 0 30px; max-width: 640px; }
+  .empty { font-size: 15px; color: var(--muted); }
+
+  .headline-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 36px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px 20px 18px; }
+  .stat-label { font-size: 11.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+  .stat-number {
+    font-family: "Anton", "Poppins", sans-serif;
+    font-weight: 400;
+    font-size: clamp(28px, 4.2vw, 38px);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.005em;
+    margin: 0;
+    padding-bottom: 12px;
+    border-bottom: 3px solid var(--accent);
+    display: inline-block;
+  }
+  .stat-breakdown { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .section { margin-bottom: 40px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .section-title { font-family: "Anton", "Poppins", sans-serif; font-weight: 400; text-transform: uppercase; letter-spacing: 0.01em; font-size: 24px; margin: 0; }
+
+  .badge {
+    font-family: "Poppins", sans-serif; font-size: 10.5px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 5px; color: #fff; white-space: nowrap;
+  }
+  .badge-instagram { background: linear-gradient(135deg, #f6a03a, #dd2a7b 55%, #8134af); }
+  .badge-tiktok { background: #0b0b0b; }
+  .badge-facebook { background: #1877f2; }
+  .badge-youtube { background: #ff0000; }
+
+  .account-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+  .account-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; break-inside: avoid; }
+  .account-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .account-username { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .account-followers {
+    font-family: "Anton", "Poppins", sans-serif; font-weight: 400; font-size: 30px; line-height: 1; margin: 0 0 3px;
+  }
+  .account-followers-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0 0 14px; }
+  .account-views { display: flex; gap: 10px; margin-bottom: 14px; }
+  .account-views-tile { flex: 1; background: var(--paper); border-radius: 8px; padding: 8px 10px; text-align: center; }
+  .account-views-tile .v { display: block; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
+  .account-views-tile .l { display: block; font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+
+  .demo-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 14px 0 7px; }
+  .demo-label:first-of-type { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .demo-bar-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; margin-bottom: 5px; }
+  .demo-bar-tag { width: 46px; flex-shrink: 0; color: var(--ink-soft); font-weight: 600; }
+  .demo-bar-track { flex: 1; height: 6px; border-radius: 999px; background: var(--paper); overflow: hidden; }
+  .demo-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+  .demo-bar-pct { width: 32px; flex-shrink: 0; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .demo-geo-list { list-style: none; margin: 0; padding: 0; }
+  .demo-geo-list li { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--ink-soft); padding: 2px 0; }
+  .demo-geo-list .pct { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+  .partner-grid { display: flex; flex-direction: column; gap: 10px; }
+  .partner-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; break-inside: avoid;
+  }
+  .partner-name { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .partner-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .partner-stats { display: flex; gap: 18px; }
+  .partner-stat { text-align: right; min-width: 52px; }
+  .partner-stat .v { display: block; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .partner-stat .l { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 1px; }
+
+  @media (max-width: 620px) {
+    .headline-stats { grid-template-columns: 1fr; }
+    .account-grid { grid-template-columns: 1fr; }
+    .partner-card { flex-direction: column; align-items: flex-start; }
+  }
+
+  @media print {
+    .btn-print { display: none; }
+    body { background: #fff; }
+  }
+
+  footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="masthead">
+      <span class="wordmark">The <b>Bello Bros</b> &middot; Media Kit</span>
+      <div class="masthead-actions">
+        <span class="updated-chip"><span class="updated-dot"></span>Prepared <strong>{{ report.created_display }}</strong></span>
+        <button type="button" class="btn-print" onclick="window.print()">Download PDF</button>
+      </div>
+    </div>
+
+    <p class="eyebrow">{{ 'Media Kit — Prepared For' if report.recipient_name else 'Media Kit' }}</p>
+    <h1 class="title">{{ report.recipient_name or 'The Bello Bros' }}</h1>
+    {% if report.note %}<p class="note">{{ report.note }}</p>{% endif %}
+
+    {% if not report.accounts %}
+      <p class="empty">No accounts are configured for this report.</p>
+    {% else %}
+      <div class="headline-stats">
+        {% if 'followers' in report.metrics %}
+          <div class="stat-card">
+            <p class="stat-label">Total Followers</p>
+            <span class="stat-number">{{ report.totals.Followers|compact }}</span>
+            <div class="stat-breakdown">across {{ report.accounts|length }} account{{ '' if report.accounts|length == 1 else 's' }}</div>
+          </div>
+        {% endif %}
+        {% if 'views_30d' in report.metrics %}
+          <div class="stat-card"><p class="stat-label">Views (30d)</p><span class="stat-number">{{ report.totals.Views_30d|compact }}</span></div>
+        {% endif %}
+        {% if 'views_90d' in report.metrics %}
+          <div class="stat-card"><p class="stat-label">Views (90d)</p><span class="stat-number">{{ report.totals.Views_90d|compact }}</span></div>
+        {% endif %}
+        {% if 'views_270d' in report.metrics %}
+          <div class="stat-card"><p class="stat-label">Views (270d)</p><span class="stat-number">{{ report.totals.Views_270d|compact }}</span></div>
+        {% endif %}
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2 class="section-title">Accounts</h2></div>
+        <div class="account-grid">
+          {% for a in report.accounts %}
+            <div class="account-card">
+              <div class="account-card-header">
+                <span class="badge badge-{{ a.Platform|lower }}">{{ a.Platform }}</span>
+                <span class="account-username">{{ a.Account_Username }}</span>
+              </div>
+
+              {% if 'followers' in report.metrics %}
+                <p class="account-followers">{{ (a.Followers or 0)|compact }}</p>
+                <p class="account-followers-label">{{ 'Subscribers' if a.Platform == 'YouTube' else 'Followers' }}</p>
+              {% endif %}
+
+              {% if 'views_30d' in report.metrics or 'views_90d' in report.metrics or 'views_270d' in report.metrics %}
+                <div class="account-views">
+                  {% if 'views_30d' in report.metrics %}<div class="account-views-tile"><span class="v">{{ (a.Views_30d or 0)|compact }}</span><span class="l">30d</span></div>{% endif %}
+                  {% if 'views_90d' in report.metrics %}<div class="account-views-tile"><span class="v">{{ (a.Views_90d or 0)|compact }}</span><span class="l">90d</span></div>{% endif %}
+                  {% if 'views_270d' in report.metrics %}<div class="account-views-tile"><span class="v">{{ (a.Views_270d or 0)|compact }}</span><span class="l">270d</span></div>{% endif %}
+                </div>
+              {% endif %}
+
+              {% if a.Demographics and a.Demographics.has_data %}
+                {% if 'gender' in report.metrics and a.Demographics.gender_breakdown %}
+                  <p class="demo-label">Gender</p>
+                  {% for g in a.Demographics.gender_breakdown %}
+                    <div class="demo-bar-row"><span class="demo-bar-tag">{{ g.label }}</span><span class="demo-bar-track"><span class="demo-bar-fill" style="width:{{ g.pct }}%;"></span></span><span class="demo-bar-pct">{{ g.pct }}%</span></div>
+                  {% endfor %}
+                {% endif %}
+                {% if 'age' in report.metrics and a.Demographics.age_breakdown %}
+                  <p class="demo-label">Age</p>
+                  {% for ag in a.Demographics.age_breakdown %}
+                    <div class="demo-bar-row"><span class="demo-bar-tag">{{ ag.label }}</span><span class="demo-bar-track"><span class="demo-bar-fill" style="width:{{ ag.pct }}%;"></span></span><span class="demo-bar-pct">{{ ag.pct }}%</span></div>
+                  {% endfor %}
+                {% endif %}
+                {% if 'top_countries' in report.metrics and a.Demographics.top_countries %}
+                  <p class="demo-label">Top Countries</p>
+                  <ul class="demo-geo-list">
+                    {% for c in a.Demographics.top_countries %}<li><span>{{ c.label }}</span><span class="pct">{{ c.pct }}%</span></li>{% endfor %}
+                  </ul>
+                {% endif %}
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if report.partnerships %}
+      <div class="section">
+        <div class="section-head"><h2 class="section-title">Partnership Highlights</h2></div>
+        <div class="partner-grid">
+          {% for p in report.partnerships %}
+            <div class="partner-card">
+              <div>
+                <div class="partner-name">{{ p.Partnership }}</div>
+                <div class="partner-meta">{{ p.total_posted }} piece{{ '' if p.total_posted == 1 else 's' }} of content{% if p.platform_breakdown %} across {{ p.platform_breakdown|map(attribute=0)|join(', ') }}{% endif %}</div>
+              </div>
+              <div class="partner-stats">
+                <div class="partner-stat"><span class="v">{{ p.totals.Views|compact }}</span><span class="l">Views</span></div>
+                <div class="partner-stat"><span class="v">{{ p.totals.Likes|compact }}</span><span class="l">Likes</span></div>
+                <div class="partner-stat"><span class="v">{{ p.totals.Comments|compact }}</span><span class="l">Comments</span></div>
+                <div class="partner-stat"><span class="v">{{ p.totals.Shares|compact }}</span><span class="l">Shares</span></div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <footer>Prepared by The Bello Bros. Figures reflect platform-reported totals at the time shown above.</footer>
+  </div>
+</body>
+</html>

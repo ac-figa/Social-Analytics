@@ -1,0 +1,57 @@
+{% extends "base_shell.html" %}
+{% block title %}New Report{% endblock %}
+{% import "_macros.html" as macros %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">New Shareable Report</h1>
+      <p class="page-subtitle">Build a custom Media Kit for one recipient — pick the accounts, metrics, and Partnership highlights to include, then get a link you can share (or print to PDF).</p>
+    </div>
+  </div>
+
+  <form method="post" action="{{ url_for('new_media_kit_report') }}" class="filter-panel">
+    <div class="filter-grid">
+      <div class="filter-field">
+        <label class="filter-field-label" for="f-recipient">Report Is For</label>
+        <input type="text" id="f-recipient" name="recipient_name" value="{{ recipient_name }}" placeholder="e.g. Bialetti" required class="field-input field-input-wide">
+        <p class="filter-hint">Shown as the report's title.</p>
+      </div>
+
+      <div class="filter-field">
+        <label class="filter-field-label">Accounts</label>
+        {{ macros.checklist_dropdown('f-accounts', 'accounts', account_options, selected_accounts, 'All Accounts', default_all=False) }}
+        <p class="filter-hint">Which accounts to show stats for.</p>
+      </div>
+
+      <div class="filter-field">
+        <label class="filter-field-label">Partnerships to Summarize</label>
+        {{ macros.checklist_dropdown('f-partnerships', 'partnerships', partnership_options, selected_partnerships, 'All Partnerships', default_all=False) }}
+        <p class="filter-hint">Optional — included as brief highlight cards, not full video lists.</p>
+      </div>
+
+      <div class="filter-field">
+        <label class="filter-field-label">Metrics to Include</label>
+        <div class="checkbox-list">
+          {% for key, label in metrics %}
+            <label><input type="checkbox" name="metrics" value="{{ key }}" {{ 'checked' if key in selected_metrics or not selected_metrics }}> {{ label }}</label>
+          {% endfor %}
+        </div>
+        <p class="filter-hint">Which numbers show on each account card.</p>
+      </div>
+
+      <div class="filter-field" style="grid-column: 1 / -1;">
+        <label class="filter-field-label" for="f-note">Note (optional)</label>
+        <textarea id="f-note" name="note" rows="2" class="field-input field-input-wide" placeholder="A short line for the recipient, e.g. thanks for considering us for a partnership.">{{ note }}</textarea>
+      </div>
+    </div>
+
+    <div class="filter-actions">
+      <button type="submit" class="btn btn-primary">Create Report &amp; Get Link</button>
+      <a class="btn btn-ghost" href="{{ url_for('media_kit_reports') }}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}
+
+{% block scripts %}
+{% include "_checklist_dropdown.js.html" %}
+{% endblock %}
