@@ -961,18 +961,47 @@ _PARTNERSHIP_HIGHLIGHT_WINDOW_DAYS = 90
 _PARTNERSHIP_HIGHLIGHT_MAX_VIDEOS = 3
 
 
-def _summarize_partnership_recent(pr: dict, days: int = _PARTNERSHIP_HIGHLIGHT_WINDOW_DAYS) -> dict:
-    """Recomputes get_partnership_report()'s totals/counts scoped to the
-    last N days, from its already-fetched groups/stories lists, rather
-    than re-querying BigQuery with a date filter -- this is only for the
-    Media Kit Report's "Partnership Highlights" cards (whose caption
-    promises "the past 90 days"), so the internal partnership page and
-    its own public share link keep showing all-time totals, unaffected.
-    Also picks up to _PARTNERSHIP_HIGHLIGHT_MAX_VIDEOS best-performing
-    (by Views) pieces from the window that have an Instagram permalink --
-    Instagram Reels are the most presentable format to hand a brand, so
-    a group with no Instagram version is skipped rather than falling
-    back to another platform's link."""
+def _filter_group_to_accounts(g: dict, selected_accounts: set):
+    """Returns a copy of group g with Members restricted to the report's
+    selected accounts, and its own Views/Likes/Comments/Shares/Publish_Date
+    recomputed from just those members -- or None if none of this group's
+    members belong to the selected accounts. A Partnership can carry
+    deals from both brands (e.g. Caffe Borbone content posted by both
+    The Bello Bros and Calcio Bros); a report built for one brand's
+    accounts must not leak the other brand's videos into its highlights,
+    even though they share a Partnership name."""
+    members = [m for m in g["Members"] if (m["Platform"], m.get("Account_Username")) in selected_accounts]
+    if not members:
+        return None
+    publish_dates = [m["Publish_Date"] for m in members if m.get("Publish_Date")]
+    return {
+        "Group_ID": g["Group_ID"],
+        "Members": members,
+        "Publish_Date": min(publish_dates) if publish_dates else None,
+        "Views": sum(m.get("Views") or 0 for m in members),
+        "Likes": sum(m.get("Likes") or 0 for m in members),
+        "Comments": sum(m.get("Comments") or 0 for m in members),
+        "Shares": sum(m.get("Shares") or 0 for m in members),
+    }
+
+
+def _summarize_partnership_recent(
+    pr: dict, selected_accounts: set, days: int = _PARTNERSHIP_HIGHLIGHT_WINDOW_DAYS
+) -> dict:
+    """Builds one Partnership Highlights card's data, scoped to only the
+    report's selected accounts (see _filter_group_to_accounts()). Totals/
+    counts are further scoped to the last N days (falling back to
+    all-time when the window has nothing, so a partnership with real but
+    older activity doesn't show a wall of zeros) -- this is only for the
+    Media Kit Report's cards (whose caption promises "the past 90 days"),
+    so the internal partnership page and its own public share link keep
+    showing all-time totals, unaffected. Top Reels are picked from
+    all-time activity regardless of the totals window -- a great video
+    from a year ago is still worth showing a prospective brand, and
+    tying it to the same 90-day cutoff would hide it for no good reason."""
+    all_groups = [g for g in (_filter_group_to_accounts(g, selected_accounts) for g in pr["groups"]) if g is not None]
+    all_stories = [s for s in pr["stories"] if (s["Platform"], s.get("Account_Username")) in selected_accounts]
+
     cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
     cutoff_date = cutoff_dt.date()
 
@@ -988,16 +1017,15 @@ def _summarize_partnership_recent(pr: dict, days: int = _PARTNERSHIP_HIGHLIGHT_W
         d = s.get("Publish_Date")
         return d is not None and d >= cutoff_date
 
-    groups = [g for g in pr["groups"] if _group_in_window(g)]
-    stories = [s for s in pr["stories"] if _story_in_window(s)]
+    groups = [g for g in all_groups if _group_in_window(g)]
+    stories = [s for s in all_stories if _story_in_window(s)]
 
     used_all_time = False
-    if not groups and not stories and (pr["groups"] or pr["stories"]):
-        # No activity in the window, but the partnership has activity
-        # overall -- someone deliberately picked this partnership to
-        # include in the report, so fall back to all-time numbers rather
-        # than showing a misleading wall of zeros for it.
-        groups, stories, used_all_time = pr["groups"], pr["stories"], True
+    if not groups and not stories and (all_groups or all_stories):
+        # No activity in the window, but the (account-filtered)
+        # partnership has activity overall -- fall back to all-time
+        # numbers rather than showing a misleading wall of zeros.
+        groups, stories, used_all_time = all_groups, all_stories, True
 
     totals = {"Views": 0, "Likes": 0, "Comments": 0, "Shares": 0}
     platform_counts: dict = {}
@@ -1011,7 +1039,7 @@ def _summarize_partnership_recent(pr: dict, days: int = _PARTNERSHIP_HIGHLIGHT_W
             totals[key] += s.get(key) or 0
 
     ig_candidates = []
-    for g in groups:
+    for g in all_groups:
         ig_member = next((m for m in g["Members"] if m["Platform"] == "Instagram" and m.get("Permalink")), None)
         if ig_member:
             ig_candidates.append({"permalink": ig_member["Permalink"], "views": g.get("Views") or 0})
@@ -1065,7 +1093,7 @@ def get_media_kit_report_data(client: bigquery.Client, token: str):
             totals[f"Views_{days}d"] += a.get(f"Views_{days}d") or 0
 
     partnerships = [
-        {"Partnership": p, **_summarize_partnership_recent(get_partnership_report(client, p))}
+        {"Partnership": p, **_summarize_partnership_recent(get_partnership_report(client, p), selected)}
         for p in report["Partnerships"]
     ]
 

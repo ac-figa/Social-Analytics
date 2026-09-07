@@ -1069,8 +1069,8 @@ def get_partnership_groups(client: bigquery.Client, partnership: str) -> list:
     SELECT
       g.Group_ID, g.Content_Type,
       ARRAY_AGG(
-        STRUCT(ci.Content_ID AS Content_ID, ci.Platform AS Platform, ci.Caption AS Caption,
-               ci.Publish_Date AS Publish_Date, ci.Permalink AS Permalink,
+        STRUCT(ci.Content_ID AS Content_ID, ci.Platform AS Platform, ci.Account_Username AS Account_Username,
+               ci.Caption AS Caption, ci.Publish_Date AS Publish_Date, ci.Permalink AS Permalink,
                ci.Views AS Views, ci.Likes AS Likes, ci.Comments AS Comments, ci.Shares AS Shares)
         ORDER BY ci.Platform
       ) AS Members,
