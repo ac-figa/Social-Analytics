@@ -1,0 +1,53 @@
+{% extends "base_shell.html" %}
+{% block title %}Hooks{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Hooks</h1>
+      <p class="page-subtitle">The opening {{ videos[0].Hook_Window_Seconds|int if videos else 4 }} seconds of every analyzed Instagram video — spoken words and on-screen text, next to how it actually performed. Look for what your best hooks have in common.</p>
+    </div>
+  </div>
+
+  <div class="pillbar">
+    <span class="pillbar-label">Sort by</span>
+    <a class="pill {{ 'is-active' if sort == 'views' }}" href="{{ url_for('hooks', sort='views') }}">Views</a>
+    <a class="pill {{ 'is-active' if sort == 'likes' }}" href="{{ url_for('hooks', sort='likes') }}">Likes</a>
+    <a class="pill {{ 'is-active' if sort == 'recent' }}" href="{{ url_for('hooks', sort='recent') }}">Most Recent</a>
+  </div>
+
+  {% if not videos %}
+    <p class="db-empty">No hook analysis yet — run <code>python -m src.hook_analysis</code> in instagramanalyticspipeline/, then reload this page.</p>
+  {% else %}
+    <div class="vcard-list">
+      {% for v in videos %}
+        <div class="hook-card">
+          <div class="hook-card-top">
+            <span class="hook-rank">#{{ loop.index }}</span>
+            {% if v.Permalink %}
+              <a class="badge badge-instagram" href="{{ v.Permalink }}" target="_blank" rel="noopener">Instagram</a>
+            {% else %}
+              <span class="badge badge-instagram">Instagram</span>
+            {% endif %}
+            <span class="hook-date">{{ v.Publish_Date.strftime('%b %d, %Y') if v.Publish_Date else '' }}</span>
+            <div class="hook-stats">
+              <div class="hook-stat"><span class="v">{{ '{:,}'.format(v.Views) if v.Views is not none else '—' }}</span><span class="l">Views</span></div>
+              <div class="hook-stat"><span class="v">{{ '{:,}'.format(v.Likes) if v.Likes is not none else '—' }}</span><span class="l">Likes</span></div>
+              <div class="hook-stat"><span class="v">{{ '{:,}'.format(v.Comments) if v.Comments is not none else '—' }}</span><span class="l">Comments</span></div>
+              <div class="hook-stat"><span class="v">{{ '{:,}'.format(v.Shares) if v.Shares is not none else '—' }}</span><span class="l">Shares</span></div>
+            </div>
+          </div>
+          <div class="hook-card-body">
+            <div class="hook-field">
+              <p class="hook-field-label">Spoken</p>
+              <p class="hook-field-value">{{ v.Hook_Transcript or '(no speech detected)' }}</p>
+            </div>
+            <div class="hook-field">
+              <p class="hook-field-label">On-Screen Text</p>
+              <p class="hook-field-value">{{ v.Hook_On_Screen_Text or '(none read)' }}</p>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

@@ -293,6 +293,30 @@ def _instagram_collab_post_ids(client: bigquery.Client) -> set:
     return {r["Post_ID"] for r in client.query(query).result()}
 
 
+def get_hook_analysis(client: bigquery.Client, sort: str = "views") -> list:
+    """Every successfully hook-analyzed Instagram video (see
+    instagramanalyticspipeline/src/hook_analysis.py), joined against
+    instagram_master for the performance numbers -- the point of this
+    page is putting the hook (spoken words + on-screen text) right next
+    to how well the video actually did, so patterns are something you
+    can read off the page rather than cross-reference by hand. Excludes
+    Analysis_Status != 'ok' (no_media_url/failed rows have nothing useful
+    to show)."""
+    ig = config.PLATFORM_CONFIG["Instagram"]
+    order_column = {"views": "m.Views", "likes": "m.Likes", "recent": "m.Publish_Date"}.get(sort, "m.Views")
+    query = f"""
+    SELECT
+      h.Post_ID, m.Account_Username, m.Permalink, m.Publish_Date,
+      m.Views, m.Likes, m.Comments, m.Shares,
+      h.Hook_Transcript, h.Hook_On_Screen_Text, h.Hook_Window_Seconds
+    FROM `{config.BQ_PROJECT_ID}.{ig['dataset']}.instagram_hook_analysis` h
+    JOIN `{config.BQ_PROJECT_ID}.{ig['dataset']}.instagram_master` m ON h.Post_ID = m.Post_ID
+    WHERE h.Analysis_Status = 'ok'
+    ORDER BY {order_column} DESC
+    """
+    return [dict(r) for r in client.query(query).result()]
+
+
 def list_pending_matches(client: bigquery.Client, months: int = None) -> list:
     since = None
     if months is not None:

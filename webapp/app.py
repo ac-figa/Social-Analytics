@@ -557,6 +557,18 @@ def _export_csv_response(report: dict, group_by: str) -> Response:
     )
 
 
+@app.route("/hooks")
+def hooks():
+    client = db.get_client()
+    sort = request.args.get("sort", "views")
+    if sort not in ("views", "likes", "recent"):
+        sort = "views"
+    return render_template(
+        "hooks.html", videos=db.get_hook_analysis(client, sort=sort), sort=sort,
+        nav_counts=db.get_dashboard_counts(client),
+    )
+
+
 @app.route("/stories")
 def stories():
     client = db.get_client()
