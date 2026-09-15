@@ -46,6 +46,12 @@ BQ_DATASET = os.environ.get("BQ_DATASET", "instagram_analytics")
 # so nothing gets wrongly marked deleted; just not re-synced.
 INSIGHTS_REFRESH_DAYS = int(os.environ.get("INSIGHTS_REFRESH_DAYS", "45"))
 
+# Powers hook_analysis.py (opening-seconds transcript + on-screen text) --
+# only required when actually running that script, not the normal sync.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+HOOK_WINDOW_SECONDS = float(os.environ.get("HOOK_WINDOW_SECONDS", "4"))
+HOOK_SPEECH_LANGUAGE = os.environ.get("HOOK_SPEECH_LANGUAGE", "en-US")
+
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 logging.basicConfig(

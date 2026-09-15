@@ -253,6 +253,33 @@ class InstagramGraphClient:
                     )
         return results
 
+    def get_media_urls(self, media_ids: list) -> dict:
+        """Returns {media_id: media_url_or_None} -- a separate, lighter
+        batched call from get_media_details() rather than adding media_url
+        to MEDIA_DETAIL_FIELDS, since this signed CDN URL is only needed
+        for hook_analysis.py's video download, not the regular sync every
+        run. Meta omits media_url entirely for media flagged with
+        copyrighted audio (common on Reels using trending sounds) -- that
+        shows up here as None, not an error, so the caller can record
+        "no media_url available" rather than treating it as a failure."""
+        results = {}
+        for chunk in _chunks(media_ids, BATCH_CHUNK_SIZE):
+            batch_items = [
+                {"method": "GET", "relative_url": f"{mid}?fields=id,media_url"} for mid in chunk
+            ]
+            responses = self._batch(batch_items)
+            for mid, item in zip(chunk, responses):
+                body = _safe_json_str(item.get("body"))
+                if item.get("code") == 200 and "error" not in body:
+                    results[mid] = body.get("media_url")
+                else:
+                    error = body.get("error", {})
+                    log.warning(
+                        "Failed to fetch media_url for %s: %s", mid, error.get("message", body)
+                    )
+                    results[mid] = None
+        return results
+
     # ---------------------------------------------------------------- #
     # Insights (batched, with per-post fallback)
     # ---------------------------------------------------------------- #
