@@ -208,7 +208,13 @@ class FacebookGraphClient:
         current Graph API versions, Page Reels appear in this same
         /{page-id}/videos listing alongside regular videos."""
         relative_url = f"{self.page_id}/videos"
-        params = {"fields": VIDEO_LIST_FIELDS, "limit": 100}
+        # limit=100 used to work here, but once a Page accumulates enough
+        # videos, Meta's /videos edge starts rejecting that page size with
+        # a literal "reduce the amount of data you're asking for" 500 --
+        # confirmed live (Sep 2026) once this Page passed a few hundred
+        # videos. It fails identically on every retry (not actually
+        # transient), so the fix is a smaller page size, not more retries.
+        params = {"fields": VIDEO_LIST_FIELDS, "limit": 25}
         url = f"{self.base_url}/{relative_url}"
         next_url = url
         next_params = params
