@@ -54,9 +54,8 @@ _ON_SCREEN_TEXT_SCHEMA = {
         "on_screen_text": {
             "type": "array",
             "description": (
-                "Every distinct piece of on-screen text/title/caption overlay visible "
-                "across these frames, in the order it appears. Empty list if there's no "
-                "on-screen text at all."
+                "Every distinct TITLE/hook text card visible across these frames, in the "
+                "order it appears. Empty list if there's no title text at all."
             ),
             "items": {"type": "string"},
         }
@@ -67,9 +66,21 @@ _ON_SCREEN_TEXT_SCHEMA = {
 
 _ON_SCREEN_TEXT_PROMPT = (
     "These are frames sampled from the opening few seconds of a short-form video "
-    "(the \"hook\"). Read out any on-screen text -- a title card, caption overlay, "
-    "or burned-in subtitles -- exactly as written. Ignore the platform's own UI "
-    "(like counts, username, icons) -- only text the creator put in the video itself."
+    "(the \"hook\"). Read out only the TITLE text -- a deliberate text-card/headline "
+    "the creator overlaid to set up the video (e.g. \"Buying alcohol in America vs "
+    "Italy\"), exactly as written.\n\n"
+    "Do NOT include auto-generated spoken-word captions/subtitles -- the burned-in "
+    "text that follows along with what's being said. Two signals separate them:\n"
+    "1. Position: a title card typically sits in the upper portion of the frame; "
+    "auto-captions sit lower on screen, usually lower-third or center.\n"
+    "2. Content: a title is a distinct creative statement/question that is NOT what "
+    "anyone is saying out loud. Here is the transcribed spoken audio for this same "
+    "window, for comparison -- if a piece of on-screen text just restates this "
+    "(even loosely), it's an auto-caption, not a title; leave it out:\n"
+    "\"{transcript}\"\n\n"
+    "Also ignore the platform's own UI (like counts, username, icons). If there's no "
+    "genuine title card in these frames, return an empty list -- don't force a match "
+    "out of the captions."
 )
 
 
@@ -137,7 +148,7 @@ def run(since_days: int = 90, limit: int = None) -> int:
                 frame_paths = _extract_hook_frames(video_path, tmpdir, config.HOOK_WINDOW_SECONDS)
 
                 transcript = _transcribe(speech_client, audio_path)
-                on_screen_text = _read_on_screen_text(anthropic_client, frame_paths)
+                on_screen_text = _read_on_screen_text(anthropic_client, frame_paths, transcript)
 
             bigquery_store.upsert_hook_analysis(
                 bq_client,
@@ -221,7 +232,7 @@ def _transcribe(speech_client: speech.SpeechClient, audio_path: str) -> str:
     return transcript or None
 
 
-def _read_on_screen_text(client: anthropic.Anthropic, frame_paths: list) -> list:
+def _read_on_screen_text(client: anthropic.Anthropic, frame_paths: list, transcript: str) -> list:
     if not frame_paths:
         return []
     content = []
@@ -230,7 +241,8 @@ def _read_on_screen_text(client: anthropic.Anthropic, frame_paths: list) -> list
         content.append(
             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}}
         )
-    content.append({"type": "text", "text": _ON_SCREEN_TEXT_PROMPT})
+    prompt_text = _ON_SCREEN_TEXT_PROMPT.format(transcript=transcript or "(no speech detected)")
+    content.append({"type": "text", "text": prompt_text})
 
     response = client.messages.create(
         model=_CLAUDE_MODEL,
