@@ -85,6 +85,26 @@ HISTORY_SCHEMA = [
     bigquery.SchemaField("Total_Interactions", "INT64"),
 ]
 
+# One row per video analyzed by hook_analysis.py -- the opening seconds'
+# spoken words (Google Cloud Speech-to-Text, on the hook window's audio)
+# and on-screen title/text (Claude vision, on frames sampled from the
+# same window). Analysis_Status records *why* a row has empty fields
+# rather than leaving that ambiguous: "no_media_url" (Meta withheld it,
+# usually copyrighted Reel audio), "download_failed", "transcribe_failed"
+# or "vision_failed" (that one step failed, others may still have
+# succeeded), or "ok". Upserted by Post_ID so a retry of a previously
+# failed post overwrites its own row instead of erroring on a duplicate.
+HOOK_ANALYSIS_TABLE = "instagram_hook_analysis"
+
+HOOK_ANALYSIS_SCHEMA = [
+    bigquery.SchemaField("Post_ID", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("Hook_Window_Seconds", "FLOAT64"),
+    bigquery.SchemaField("Hook_Transcript", "STRING"),
+    bigquery.SchemaField("Hook_On_Screen_Text", "STRING"),
+    bigquery.SchemaField("Analysis_Status", "STRING"),
+    bigquery.SchemaField("Analyzed_At", "TIMESTAMP"),
+]
+
 # Columns updated on an existing Instagram_Master row. Data/Data_Comment
 # are deliberately absent -- see module docstring. Duration is also
 # absent: the Graph API never returns it (see docs/API_NOTES.md), so
@@ -119,6 +139,7 @@ def ensure_schema(client: bigquery.Client) -> None:
         (MASTER_TABLE, MASTER_SCHEMA),
         (CLASSIFICATIONS_TABLE, CLASSIFICATIONS_SCHEMA),
         (HISTORY_TABLE, HISTORY_SCHEMA),
+        (HOOK_ANALYSIS_TABLE, HOOK_ANALYSIS_SCHEMA),
     ):
         table_id = _table_ref(name)
         try:
@@ -247,3 +268,62 @@ def insert_history_snapshot(client: bigquery.Client, rows: list, snapshot_date: 
     """
     client.query(merge_sql).result()
     log.info("Inserted %d history snapshot rows for %s (deduped)", len(rows), snapshot_date)
+
+
+def get_posts_needing_hook_analysis(client: bigquery.Client, since_days: int) -> list:
+    """Video/Reel posts published in the last since_days that don't
+    already have a row in instagram_hook_analysis -- the candidate list
+    for one hook_analysis.py run. Excludes Carousel/Image posts (no
+    motion/audio hook to analyze) and anything already
+    Deleted_or_Unavailable. Re-running the script is safe: anything
+    already analyzed (successfully or not) is skipped, not re-fetched --
+    delete its row first if you want a specific post re-analyzed."""
+    query = f"""
+    SELECT m.Post_ID, m.Permalink, m.Publish_Date
+    FROM `{_table_ref(MASTER_TABLE)}` m
+    LEFT JOIN `{_table_ref(HOOK_ANALYSIS_TABLE)}` h ON m.Post_ID = h.Post_ID
+    WHERE m.Post_Type IN ('Reel', 'Video')
+      AND m.API_Status = 'Active'
+      AND m.Publish_Date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @since_days DAY)
+      AND h.Post_ID IS NULL
+    ORDER BY m.Publish_Date DESC
+    """
+    rows = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("since_days", "INT64", since_days)]
+        ),
+    ).result()
+    return [dict(r) for r in rows]
+
+
+def upsert_hook_analysis(client: bigquery.Client, row: dict) -> None:
+    """Upserts one instagram_hook_analysis row, keyed on Post_ID -- an
+    UPDATE rather than a fresh INSERT on retry, so re-running a
+    previously-failed post overwrites its own row instead of erroring on
+    a duplicate key."""
+    query = f"""
+    MERGE `{_table_ref(HOOK_ANALYSIS_TABLE)}` T
+    USING (SELECT @post_id AS Post_ID) S
+    ON T.Post_ID = S.Post_ID
+    WHEN MATCHED THEN UPDATE SET
+      T.Hook_Window_Seconds = @hook_window_seconds, T.Hook_Transcript = @hook_transcript,
+      T.Hook_On_Screen_Text = @hook_on_screen_text, T.Analysis_Status = @analysis_status,
+      T.Analyzed_At = @analyzed_at
+    WHEN NOT MATCHED THEN
+      INSERT (Post_ID, Hook_Window_Seconds, Hook_Transcript, Hook_On_Screen_Text, Analysis_Status, Analyzed_At)
+      VALUES (@post_id, @hook_window_seconds, @hook_transcript, @hook_on_screen_text, @analysis_status, @analyzed_at)
+    """
+    client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("post_id", "STRING", row["Post_ID"]),
+                bigquery.ScalarQueryParameter("hook_window_seconds", "FLOAT64", row.get("Hook_Window_Seconds")),
+                bigquery.ScalarQueryParameter("hook_transcript", "STRING", row.get("Hook_Transcript")),
+                bigquery.ScalarQueryParameter("hook_on_screen_text", "STRING", row.get("Hook_On_Screen_Text")),
+                bigquery.ScalarQueryParameter("analysis_status", "STRING", row["Analysis_Status"]),
+                bigquery.ScalarQueryParameter("analyzed_at", "TIMESTAMP", row["Analyzed_At"]),
+            ]
+        ),
+    ).result()
