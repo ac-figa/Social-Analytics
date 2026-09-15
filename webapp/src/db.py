@@ -19,7 +19,7 @@ from google.cloud import bigquery  # noqa: E402
 
 from shared.src import content_store  # noqa: E402
 
-from . import vision
+from . import hook_insights, vision
 
 _REPORT_TZ = ZoneInfo("America/Toronto")
 
@@ -315,6 +315,54 @@ def get_hook_analysis(client: bigquery.Client, sort: str = "views") -> list:
     ORDER BY {order_column} DESC
     """
     return [dict(r) for r in client.query(query).result()]
+
+
+def get_hook_pattern_analysis(hooks: list) -> dict | None:
+    """Buckets analyzed hooks by on-screen-text style (question, comparison,
+    bold claim, ...) and compares real average performance across styles --
+    the "what style of hook actually performs better" view. Claude only
+    ever supplies the categorical style label (hook_insights.py); every
+    number here (avg views/likes, the top example) is computed directly
+    from the BigQuery rows already loaded by get_hook_analysis(), never
+    asked of the model. Returns None when there isn't enough to say
+    anything useful (no ANTHROPIC_API_KEY, or fewer than 3 hooks with
+    on-screen text)."""
+    if not config.ANTHROPIC_API_KEY:
+        return None
+    candidates = [h for h in hooks if h.get("Hook_On_Screen_Text")]
+    if len(candidates) < 3:
+        return None
+
+    styles = hook_insights.classify_hook_styles(candidates)
+    if not styles:
+        return None
+
+    buckets = {}
+    for h in candidates:
+        style_key = styles.get(h["Post_ID"])
+        if not style_key:
+            continue
+        b = buckets.setdefault(style_key, {"videos": [], "views": 0, "likes": 0})
+        b["videos"].append(h)
+        b["views"] += h.get("Views") or 0
+        b["likes"] += h.get("Likes") or 0
+
+    if not buckets:
+        return None
+
+    rows = []
+    for style_key, b in buckets.items():
+        n = len(b["videos"])
+        rows.append({
+            "style_key": style_key,
+            "style_label": hook_insights.HOOK_STYLES.get(style_key, style_key),
+            "count": n,
+            "avg_views": round(b["views"] / n),
+            "avg_likes": round(b["likes"] / n),
+            "top_example": max(b["videos"], key=lambda h: h.get("Views") or 0),
+        })
+    rows.sort(key=lambda r: -r["avg_views"])
+    return {"styles": rows, "total_classified": len(candidates)}
 
 
 def list_pending_matches(client: bigquery.Client, months: int = None) -> list:

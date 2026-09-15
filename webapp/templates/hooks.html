@@ -8,6 +8,35 @@
     </div>
   </div>
 
+  {% if patterns %}
+    <div class="hook-patterns">
+      <div class="hook-patterns-head">
+        <h2 class="hook-patterns-title">Hook Style Patterns</h2>
+        <p class="hook-patterns-note">Based on {{ patterns.total_classified }} video{{ 's' if patterns.total_classified != 1 }} with on-screen text, grouped by hook style and ranked by average views.</p>
+      </div>
+      <div class="pattern-table">
+        {% for s in patterns.styles %}
+          <div class="pattern-row">
+            <div class="pattern-style">
+              <span class="pattern-rank">#{{ loop.index }}</span>
+              <span class="pattern-label">{{ s.style_label }}</span>
+              <span class="pattern-count">{{ s.count }} video{{ 's' if s.count != 1 }}</span>
+            </div>
+            <div class="pattern-stats">
+              <div class="pattern-stat"><span class="v">{{ '{:,}'.format(s.avg_views) }}</span><span class="l">Avg Views</span></div>
+              <div class="pattern-stat"><span class="v">{{ '{:,}'.format(s.avg_likes) }}</span><span class="l">Avg Likes</span></div>
+            </div>
+            {% if s.top_example.Permalink %}
+              <a class="pattern-example" href="{{ s.top_example.Permalink }}" target="_blank" rel="noopener">Top: “{{ s.top_example.Hook_On_Screen_Text|truncate(70) }}” ↗</a>
+            {% else %}
+              <p class="pattern-example pattern-example-static">Top: “{{ s.top_example.Hook_On_Screen_Text|truncate(70) }}”</p>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
   <div class="pillbar">
     <span class="pillbar-label">Sort by</span>
     <a class="pill {{ 'is-active' if sort == 'views' }}" href="{{ url_for('hooks', sort='views') }}">Views</a>

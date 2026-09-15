@@ -563,8 +563,10 @@ def hooks():
     sort = request.args.get("sort", "views")
     if sort not in ("views", "likes", "recent"):
         sort = "views"
+    videos = db.get_hook_analysis(client, sort=sort)
     return render_template(
-        "hooks.html", videos=db.get_hook_analysis(client, sort=sort), sort=sort,
+        "hooks.html", videos=videos, sort=sort,
+        patterns=db.get_hook_pattern_analysis(videos),
         nav_counts=db.get_dashboard_counts(client),
     )
 
