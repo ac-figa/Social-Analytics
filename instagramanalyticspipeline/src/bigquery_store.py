@@ -270,20 +270,27 @@ def insert_history_snapshot(client: bigquery.Client, rows: list, snapshot_date: 
     log.info("Inserted %d history snapshot rows for %s (deduped)", len(rows), snapshot_date)
 
 
-def get_posts_needing_hook_analysis(client: bigquery.Client, since_days: int) -> list:
-    """Video/Reel posts published in the last since_days that don't
-    already have a row in instagram_hook_analysis -- the candidate list
-    for one hook_analysis.py run. Excludes Carousel/Image posts (no
-    motion/audio hook to analyze) and anything already
-    Deleted_or_Unavailable. Re-running the script is safe: anything
-    already analyzed (successfully or not) is skipped, not re-fetched --
-    delete its row first if you want a specific post re-analyzed."""
+def get_posts_needing_hook_analysis(client: bigquery.Client, since_days: int, account_id: str) -> list:
+    """Video/Reel posts published in the last since_days by ONE account
+    (account_id) that don't already have a row in instagram_hook_analysis
+    -- the candidate list for one hook_analysis.py run. account_id scopes
+    this to whichever account the run is authenticated as (see
+    hook_analysis.py's run(), which fetches it from get_account_info())
+    -- both brands' posts share this same instagram_master table
+    (distinguished by Account_ID), so without this filter a run against
+    one account's credentials would still pull the other's posts too.
+    Excludes Carousel/Image posts (no motion/audio hook to analyze) and
+    anything already Deleted_or_Unavailable. Re-running the script is
+    safe: anything already analyzed (successfully or not) is skipped,
+    not re-fetched -- delete its row first if you want a specific post
+    re-analyzed."""
     query = f"""
     SELECT m.Post_ID, m.Permalink, m.Publish_Date
     FROM `{_table_ref(MASTER_TABLE)}` m
     LEFT JOIN `{_table_ref(HOOK_ANALYSIS_TABLE)}` h ON m.Post_ID = h.Post_ID
     WHERE m.Post_Type IN ('Reel', 'Video')
       AND m.API_Status = 'Active'
+      AND m.Account_ID = @account_id
       AND m.Publish_Date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @since_days DAY)
       AND h.Post_ID IS NULL
     ORDER BY m.Publish_Date DESC
@@ -291,7 +298,10 @@ def get_posts_needing_hook_analysis(client: bigquery.Client, since_days: int) ->
     rows = client.query(
         query,
         job_config=bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("since_days", "INT64", since_days)]
+            query_parameters=[
+                bigquery.ScalarQueryParameter("since_days", "INT64", since_days),
+                bigquery.ScalarQueryParameter("account_id", "STRING", account_id),
+            ]
         ),
     ).result()
     return [dict(r) for r in rows]

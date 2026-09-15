@@ -42,7 +42,7 @@ import requests
 from google.cloud import speech
 
 from . import bigquery_store, config
-from .graph_client import InstagramGraphClient
+from .graph_client import InstagramGraphClient, TokenExpiredError
 
 log = logging.getLogger(__name__)
 
@@ -78,21 +78,35 @@ def run(since_days: int = 90, limit: int = None) -> int:
         log.error("Fatal: ANTHROPIC_API_KEY is not set (see .env.example).")
         return 1
 
+    graph_client = InstagramGraphClient()
+    try:
+        account_info = graph_client.get_account_info()
+    except TokenExpiredError as e:
+        log.error("Fatal: %s", e)
+        return 1
+
     bq_client = bigquery_store.get_client()
     bigquery_store.ensure_schema(bq_client)
 
-    candidates = bigquery_store.get_posts_needing_hook_analysis(bq_client, since_days)
+    # Scoped to whichever account this run is authenticated as (see
+    # ENV_FILE in config.py's docstring for how a second brand's account
+    # runs against the same table under different credentials) -- both
+    # brands' posts live in the same instagram_master table, so without
+    # this every run would pull every account's posts.
+    candidates = bigquery_store.get_posts_needing_hook_analysis(bq_client, since_days, account_info["id"])
     if limit:
         candidates = candidates[:limit]
     if not candidates:
         log.info(
-            "Nothing to analyze -- every video in the last %d days already has a hook analysis row.",
-            since_days,
+            "Nothing to analyze for @%s -- every video in the last %d days already has a hook analysis row.",
+            account_info.get("username"), since_days,
         )
         return 0
-    log.info("Analyzing the hook of %d video(s) (window: %.1fs)...", len(candidates), config.HOOK_WINDOW_SECONDS)
+    log.info(
+        "Analyzing the hook of %d video(s) from @%s (window: %.1fs)...",
+        len(candidates), account_info.get("username"), config.HOOK_WINDOW_SECONDS,
+    )
 
-    graph_client = InstagramGraphClient()
     media_urls = graph_client.get_media_urls([c["Post_ID"] for c in candidates])
 
     speech_client = speech.SpeechClient()
