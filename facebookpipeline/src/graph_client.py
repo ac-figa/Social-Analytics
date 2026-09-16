@@ -52,6 +52,7 @@ import json
 import logging
 import time
 from typing import Iterator
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 
@@ -206,32 +207,39 @@ class FacebookGraphClient:
         """Yields {"id": ..., "created_time": ...} for every video posted
         to the Page, following pagination cursors. Includes Reels -- on
         current Graph API versions, Page Reels appear in this same
-        /{page-id}/videos listing alongside regular videos."""
-        relative_url = f"{self.page_id}/videos"
-        # limit=100 used to work here, but once a Page accumulates enough
-        # videos, Meta's /videos edge starts rejecting that page size with
-        # a literal "reduce the amount of data you're asking for" 500 --
-        # confirmed live (Sep 2026) once this Page passed a few hundred
-        # videos. It fails identically on every retry (not actually
-        # transient), so the fix is a smaller page size, not more retries.
-        params = {"fields": VIDEO_LIST_FIELDS, "limit": 25}
-        url = f"{self.base_url}/{relative_url}"
-        next_url = url
-        next_params = params
+        /{page-id}/videos listing alongside regular videos.
+
+        Once a Page accumulates enough videos, Meta's /videos edge starts
+        rejecting requests with a literal "reduce the amount of data
+        you're asking for" 500 -- confirmed live (Sep 2026). It's not a
+        fixed threshold: even limit=25 still hit it on some pages while
+        succeeding on others, and it fails identically on every retry at
+        the same page size (not actually transient), so a hardcoded page
+        size just becomes the next thing to fix as the Page keeps
+        growing. Instead, hitting this exact error halves `limit` (down
+        to a floor of 5) and retries -- literally doing what Meta's own
+        message says -- and that smaller size sticks for every following
+        page too, not just the one that failed."""
+        limit = 25
+        initial_params = {"fields": VIDEO_LIST_FIELDS, "limit": limit, "access_token": self.access_token}
+        next_url = f"{self.base_url}/{self.page_id}/videos?{urlencode(initial_params)}"
         seen = 0
         while next_url:
             for attempt in range(1, MAX_RETRIES + 1):
-                resp = self.session.get(
-                    next_url,
-                    params={**next_params, "access_token": self.access_token}
-                    if next_params
-                    else None,
-                    timeout=30,
-                )
+                resp = self.session.get(next_url, timeout=30)
                 payload = _safe_json(resp)
                 error = payload.get("error") if isinstance(payload, dict) else None
                 if error is None and resp.ok:
                     break
+                message = (error or {}).get("message") or ""
+                if "reduce the amount of data" in message.lower() and limit > 5:
+                    limit = max(5, limit // 2)
+                    next_url = _set_query_param(next_url, "limit", limit)
+                    log.warning(
+                        "Meta asked for a smaller page listing %s/videos -- shrinking to limit=%d and retrying",
+                        self.page_id,
+                        limit,
+                    )
                 _raise_or_backoff(error, resp.status_code, attempt, post_id=None)
             else:
                 raise GraphAPIError("Exhausted retries listing videos")
@@ -240,8 +248,8 @@ class FacebookGraphClient:
                 seen += 1
                 yield item
 
-            next_url = payload.get("paging", {}).get("next")
-            next_params = None
+            raw_next = payload.get("paging", {}).get("next")
+            next_url = _set_query_param(raw_next, "limit", limit) if raw_next else None
 
         log.info("Listed %d videos for Page %s", seen, self.page_id)
 
@@ -374,6 +382,17 @@ def _safe_json(resp) -> dict:
         return resp.json()
     except ValueError:
         return {}
+
+
+def _set_query_param(url: str, key: str, value) -> str:
+    """Overrides one query param on a full URL, keeping everything else
+    (including Meta's own opaque `after` cursor and access_token) intact
+    -- used to shrink `limit` on a paging.next URL we didn't build
+    ourselves."""
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query))
+    query[key] = str(value)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
 def _safe_json_str(body_str) -> dict:
