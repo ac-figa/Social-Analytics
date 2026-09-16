@@ -82,6 +82,7 @@ RATE_LIMIT_ERROR_CODES = {4, 17, 32, 613}
 BATCH_CHUNK_SIZE = 50
 MAX_RETRIES = 5
 INITIAL_BACKOFF_SECONDS = 2
+MAX_BACKOFF_SECONDS = 20
 
 
 class GraphAPIError(Exception):
@@ -210,22 +211,27 @@ class FacebookGraphClient:
         /{page-id}/videos listing alongside regular videos.
 
         Once a Page accumulates enough videos, Meta's /videos edge starts
-        rejecting requests with a literal "reduce the amount of data
-        you're asking for" 500 -- confirmed live (Sep 2026). It's not a
-        fixed threshold: even limit=25 still hit it on some pages while
-        succeeding on others, and it fails identically on every retry at
-        the same page size (not actually transient), so a hardcoded page
-        size just becomes the next thing to fix as the Page keeps
-        growing. Instead, hitting this exact error halves `limit` (down
-        to a floor of 5) and retries -- literally doing what Meta's own
-        message says -- and that smaller size sticks for every following
-        page too, not just the one that failed."""
+        intermittently rejecting requests with a literal "reduce the
+        amount of data you're asking for" 500 -- confirmed live
+        (Sep 2026). It's not a hard, deterministic threshold: even
+        limit=5 (this call's floor) still hit it on some pages while
+        succeeding on others in the same run, so this isn't just "pick
+        the right page size" -- Meta's own edge is somewhat flaky here
+        regardless of size once a Page is this large. Two things handle
+        it together: hitting this exact error halves `limit` (floor 5,
+        sticking for every following page too, not just the one that
+        failed) since a smaller page does measurably help, and a taller
+        retry budget than other Graph API calls in this client (with a
+        capped backoff) gives a page that fails at even the smallest
+        size more chances to succeed, since retrying is genuinely
+        sometimes enough here."""
         limit = 25
+        listing_max_retries = 10
         initial_params = {"fields": VIDEO_LIST_FIELDS, "limit": limit, "access_token": self.access_token}
         next_url = f"{self.base_url}/{self.page_id}/videos?{urlencode(initial_params)}"
         seen = 0
         while next_url:
-            for attempt in range(1, MAX_RETRIES + 1):
+            for attempt in range(1, listing_max_retries + 1):
                 resp = self.session.get(next_url, timeout=30)
                 payload = _safe_json(resp)
                 error = payload.get("error") if isinstance(payload, dict) else None
@@ -240,7 +246,7 @@ class FacebookGraphClient:
                         self.page_id,
                         limit,
                     )
-                _raise_or_backoff(error, resp.status_code, attempt, post_id=None)
+                _raise_or_backoff(error, resp.status_code, attempt, post_id=None, max_retries=listing_max_retries)
             else:
                 raise GraphAPIError("Exhausted retries listing videos")
 
@@ -404,7 +410,7 @@ def _safe_json_str(body_str) -> dict:
         return {}
 
 
-def _raise_or_backoff(error, status_code, attempt, post_id):
+def _raise_or_backoff(error, status_code, attempt, post_id, max_retries=MAX_RETRIES):
     if error is None and status_code and status_code < 500 and status_code != 429:
         raise GraphAPIError(f"HTTP {status_code} with no error body", post_id=post_id)
 
@@ -429,10 +435,10 @@ def _raise_or_backoff(error, status_code, attempt, post_id):
         )
 
     retryable = status_code == 429 or (status_code and status_code >= 500)
-    if not retryable or attempt >= MAX_RETRIES:
+    if not retryable or attempt >= max_retries:
         raise GraphAPIError(message, code=code, post_id=post_id)
 
-    backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+    backoff = min(MAX_BACKOFF_SECONDS, INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)))
     log.warning(
         "Rate limited / transient error (code=%s, http=%s): %s -- retrying in %ds "
         "(attempt %d/%d)",
@@ -441,6 +447,6 @@ def _raise_or_backoff(error, status_code, attempt, post_id):
         message,
         backoff,
         attempt,
-        MAX_RETRIES,
+        max_retries,
     )
     time.sleep(backoff)
