@@ -43,11 +43,22 @@ _sm_client = secretmanager.SecretManagerServiceClient()
 # and (for TikTok) watch for a rotated refresh token. "rotates" mirrors
 # tiktokpipeline/src/config.py's update_refresh_token() -- only TikTok's
 # credentials ever change on their own between runs.
+#
+# Facebook runs before Instagram on purpose: both pipelines reuse the
+# same Meta App/System User token for the Bello Bros account (see
+# facebookpipeline/src/config.py's docstring), so they share whatever
+# app-level Graph API usage budget Meta tracks against that token.
+# Facebook's /videos listing started intermittently failing with a
+# generic "reduce the amount of data" 500 once both platforms' post
+# counts grew a lot (Sep 2026) -- worth testing whether that's Facebook
+# getting hit with a token that Instagram's own (much larger) call
+# volume already pushed toward Meta's usage ceiling, by just giving
+# Facebook a clean budget first instead of running it second.
 SYNC_TARGETS = [
-    {"label": "Instagram", "dir": REPO_ROOT / "instagramanalyticspipeline",
-     "secret": "sync-env-instagram", "env_file": ".env", "rotates": False},
     {"label": "Facebook", "dir": REPO_ROOT / "facebookpipeline",
      "secret": "sync-env-facebook", "env_file": ".env", "rotates": False},
+    {"label": "Instagram", "dir": REPO_ROOT / "instagramanalyticspipeline",
+     "secret": "sync-env-instagram", "env_file": ".env", "rotates": False},
     {"label": "YouTube", "dir": REPO_ROOT / "youtubepipeline",
      "secret": "sync-env-youtube", "env_file": ".env", "rotates": False},
     {"label": "TikTok", "dir": REPO_ROOT / "tiktokpipeline",
