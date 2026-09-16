@@ -254,6 +254,16 @@ class FacebookGraphClient:
                 seen += 1
                 yield item
 
+            # A small pause between pages, not just after an error -- this
+            # edge is failing on a large fraction of pages even at the
+            # smallest size and full retry budget (confirmed live, Sep
+            # 2026: dozens of pages, most needing at least one retry,
+            # several needing all 10), which looks like Meta's backend
+            # under load for this Page's size rather than something purely
+            # about this client's request rate -- but firing pages
+            # back-to-back can only make that worse, never better.
+            time.sleep(0.5)
+
             raw_next = payload.get("paging", {}).get("next")
             next_url = _set_query_param(raw_next, "limit", limit) if raw_next else None
 
