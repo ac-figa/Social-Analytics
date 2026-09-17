@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import bigquery_store, config, suggestions, transform
-from .graph_client import FacebookGraphClient, GraphAPIError, RateLimitedError, TokenExpiredError
+from .graph_client import FacebookGraphClient, RateLimitedError, TokenExpiredError
 
 # See instagramanalyticspipeline/src/pipeline.py for why this path math:
 # src/ -> facebookpipeline/ -> repo root, which also contains shared/.
@@ -36,17 +36,25 @@ def run(full_refresh: bool = False) -> int:
 
     log.info("Fetching video list for Page %s ...", page_info.get("name"))
     try:
-        video_list = list(client.get_all_video_ids())
+        video_list, listing_complete = client.get_all_video_ids()
     except TokenExpiredError as e:
         log.error("Fatal: %s", e)
         return 1
-    except GraphAPIError as e:
-        log.error("Fatal: could not list videos: %s", e)
+    except RateLimitedError as e:
+        log.error("Fatal: %s", e)
         return 1
 
     if not video_list:
         log.warning("No videos returned for this Page -- nothing to do.")
         return 0
+
+    if not listing_complete:
+        log.warning(
+            "Video listing didn't finish (Meta's /videos edge kept rejecting requests) -- "
+            "proceeding with the %d video(s) already collected, but skipping the "
+            "deleted-video check this run since that list is known incomplete.",
+            len(video_list),
+        )
 
     all_video_ids = [v["id"] for v in video_list]
     log.info("Found %d videos.", len(all_video_ids))
@@ -147,8 +155,11 @@ def run(full_refresh: bool = False) -> int:
     # from this list so mark_missing_as_deleted correctly soft-deletes any
     # that were previously synced before this filter existed, instead of
     # leaving them stuck as Active forever.
-    active_ids = [vid for vid in all_video_ids if vid not in orphan_video_ids]
-    bigquery_store.mark_missing_as_deleted(bq_client, active_ids)
+    if listing_complete:
+        active_ids = [vid for vid in all_video_ids if vid not in orphan_video_ids]
+        bigquery_store.mark_missing_as_deleted(bq_client, active_ids)
+    else:
+        log.info("Skipping the deleted-video check -- this run's video listing was incomplete.")
     _sync_to_shared_content_layer(rows, page_info, client)
 
     snapshot_date = datetime.now(timezone.utc).date().isoformat()

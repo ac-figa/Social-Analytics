@@ -51,7 +51,6 @@ See docs/SETUP.md for the full writeup.
 import json
 import logging
 import time
-from typing import Iterator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
@@ -204,55 +203,75 @@ class FacebookGraphClient:
     # ---------------------------------------------------------------- #
     # Video listing
     # ---------------------------------------------------------------- #
-    def get_all_video_ids(self) -> Iterator[dict]:
-        """Yields {"id": ..., "created_time": ...} for every video posted
-        to the Page, following pagination cursors. Includes Reels -- on
-        current Graph API versions, Page Reels appear in this same
-        /{page-id}/videos listing alongside regular videos.
+    def get_all_video_ids(self) -> tuple:
+        """Returns (items, complete). items is every {"id", "created_time"}
+        dict collected before pagination either finished or gave up on
+        Meta's /videos edge (includes Reels -- on current Graph API
+        versions they appear in this same listing alongside regular
+        videos). complete is False when Meta's edge never let pagination
+        finish.
 
-        Once a Page accumulates enough videos, Meta's /videos edge starts
+        Once a Page accumulates enough videos, that edge starts
         intermittently rejecting requests with a literal "reduce the
         amount of data you're asking for" 500 -- confirmed live
-        (Sep 2026). It's not a hard, deterministic threshold: even
-        limit=5 (this call's floor) still hit it on some pages while
-        succeeding on others in the same run, so this isn't just "pick
-        the right page size" -- Meta's own edge is somewhat flaky here
-        regardless of size once a Page is this large. Two things handle
-        it together: hitting this exact error halves `limit` (floor 5,
-        sticking for every following page too, not just the one that
-        failed) since a smaller page does measurably help, and a taller
-        retry budget than other Graph API calls in this client (with a
-        capped backoff) gives a page that fails at even the smallest
-        size more chances to succeed, since retrying is genuinely
-        sometimes enough here."""
+        (Sep 2026), and NOT a hard, deterministic threshold: reordering
+        this call ahead of Instagram in the same token (ruling out a
+        shared usage budget), shrinking the page size to a floor of 5,
+        a taller-than-normal retry budget, and pacing between pages all
+        measurably helped some pages succeed but still didn't guarantee
+        every page does -- this Page's video count is just large enough
+        that Meta's own edge is somewhat unreliable right now, something
+        client-side tuning alone can reduce but not eliminate.
+
+        So rather than one bad page after dozens of good ones throwing
+        away everything, a page that's still failing after the full
+        retry budget ends collection early and returns what's been
+        gathered so far with complete=False -- callers must NOT treat
+        that as the full catalog (see pipeline.py's mark_missing_as_
+        deleted guard, skipped whenever complete is False, since
+        soft-deleting every video this run didn't get far enough to see
+        again would be worse than just not refreshing them this run).
+        TokenExpiredError and RateLimitedError still raise immediately --
+        those are real, run-wide problems, not something a partial list
+        should paper over."""
         limit = 25
         listing_max_retries = 10
         initial_params = {"fields": VIDEO_LIST_FIELDS, "limit": limit, "access_token": self.access_token}
         next_url = f"{self.base_url}/{self.page_id}/videos?{urlencode(initial_params)}"
-        seen = 0
+        items = []
         while next_url:
-            for attempt in range(1, listing_max_retries + 1):
-                resp = self.session.get(next_url, timeout=30)
-                payload = _safe_json(resp)
-                error = payload.get("error") if isinstance(payload, dict) else None
-                if error is None and resp.ok:
-                    break
-                message = (error or {}).get("message") or ""
-                if "reduce the amount of data" in message.lower() and limit > 5:
-                    limit = max(5, limit // 2)
-                    next_url = _set_query_param(next_url, "limit", limit)
-                    log.warning(
-                        "Meta asked for a smaller page listing %s/videos -- shrinking to limit=%d and retrying",
-                        self.page_id,
-                        limit,
-                    )
-                _raise_or_backoff(error, resp.status_code, attempt, post_id=None, max_retries=listing_max_retries)
-            else:
-                raise GraphAPIError("Exhausted retries listing videos")
+            try:
+                for attempt in range(1, listing_max_retries + 1):
+                    resp = self.session.get(next_url, timeout=30)
+                    payload = _safe_json(resp)
+                    error = payload.get("error") if isinstance(payload, dict) else None
+                    if error is None and resp.ok:
+                        break
+                    message = (error or {}).get("message") or ""
+                    if "reduce the amount of data" in message.lower() and limit > 5:
+                        limit = max(5, limit // 2)
+                        next_url = _set_query_param(next_url, "limit", limit)
+                        log.warning(
+                            "Meta asked for a smaller page listing %s/videos -- shrinking to limit=%d and retrying",
+                            self.page_id,
+                            limit,
+                        )
+                    _raise_or_backoff(error, resp.status_code, attempt, post_id=None, max_retries=listing_max_retries)
+                else:
+                    raise GraphAPIError("Exhausted retries listing videos")
+            except (TokenExpiredError, RateLimitedError):
+                raise
+            except GraphAPIError as e:
+                log.error(
+                    "Giving up on further pages listing %s/videos after %d item(s) already "
+                    "collected (pagination incomplete): %s",
+                    self.page_id,
+                    len(items),
+                    e,
+                )
+                return items, False
 
-            for item in payload.get("data", []):
-                seen += 1
-                yield item
+            items.extend(payload.get("data", []))
 
             # A small pause between pages, not just after an error -- this
             # edge is failing on a large fraction of pages even at the
@@ -267,7 +286,8 @@ class FacebookGraphClient:
             raw_next = payload.get("paging", {}).get("next")
             next_url = _set_query_param(raw_next, "limit", limit) if raw_next else None
 
-        log.info("Listed %d videos for Page %s", seen, self.page_id)
+        log.info("Listed %d videos for Page %s", len(items), self.page_id)
+        return items, True
 
     # ---------------------------------------------------------------- #
     # Video details (batched)
