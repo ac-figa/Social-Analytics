@@ -12,11 +12,17 @@ passes rather than trying to do everything in one shot:
      house", pure emojis, a joke, tagging a friend with no place named)
      or more than one ("Spot A or Spot B!" -> two separate votes).
   2. Cross-comment normalization: the ~hundreds of distinct raw strings
-     from step 1 (not the ~1000 raw comments) get grouped in one call,
-     so "Tiramisu Bar", "the tiramisu bar downtown", and "tiramisubar"
-     can be recognized as the same place -- something no single isolated
+     from step 1 (not the ~1000 raw comments) get grouped, so "Tiramisu
+     Bar", "the tiramisu bar downtown", and "tiramisubar" can be
+     recognized as the same place -- something no single isolated
      comment-by-comment pass could do, since it has no visibility into
-     how other commenters spelled the same place.
+     how other commenters spelled the same place. This itself is two
+     steps: a deterministic mechanical pass first (_mechanical_key())
+     collapses "@handle" vs. "plain name" duplicates for the exact same
+     place -- a fact about the string, not a judgment call, and one a
+     single Claude call over hundreds of entries missed several of when
+     left to it -- and only the resulting (much smaller) deduplicated
+     list goes to Claude for genuine typo/spelling-variant grouping.
 
 The actual vote tally is plain Python counting over Claude's
 categorical output (place name per comment) -- never derived arithmetic
@@ -206,6 +212,54 @@ def _extract_places(client: anthropic.Anthropic, comments: list) -> dict:
     return results
 
 
+def _mechanical_key(raw: str) -> str:
+    """Strips a leading '@', all whitespace/punctuation, and lowercases
+    -- catches the mechanical case where the same place is typed both as
+    its Instagram handle and as its plain name (e.g. "@truscottbakery"
+    and "Truscott Bakery" both key to "truscottbakery"). This is a fact
+    about the string, not a judgment call, so it shouldn't be left to
+    the model on a list of hundreds of entries -- confirmed live that it
+    otherwise missed several exactly this shape (handle vs. plain name
+    for the same place counted as two different places)."""
+    s = raw.strip()
+    if s.startswith("@"):
+        s = s[1:]
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def _mechanical_precluster(raw_places: list) -> dict:
+    """Returns {raw: representative} -- every raw string sharing the
+    same _mechanical_key() collapses onto one representative before
+    Claude ever sees the list, so the (much smaller, deduplicated) list
+    handed to _group_places() only has genuine typo/spelling variants
+    left for it to reason about, not mechanical @-handle duplicates.
+    The representative prefers a non-'@' variant (reads better in the
+    final CSV) and, among those, the longest (most likely to be the
+    full written-out name rather than a shorthand)."""
+    groups = defaultdict(list)
+    for raw in raw_places:
+        groups[_mechanical_key(raw)].append(raw)
+
+    raw_to_representative = {}
+    for key, variants in groups.items():
+        if not key:
+            for v in variants:
+                raw_to_representative[v] = v
+            continue
+        non_handle = [v for v in variants if not v.strip().startswith("@")]
+        pool = non_handle or variants
+        # Prefer a variant with a space over a handle-styled slug (e.g.
+        # "Cantina Amici" over "cantina_amici") before falling back to
+        # plain length, so the representative reads like a name a human
+        # typed rather than an @-handle with the @ stripped off.
+        spaced = [v for v in pool if " " in v]
+        pool = spaced or pool
+        representative = max(pool, key=len)
+        for v in variants:
+            raw_to_representative[v] = representative
+    return raw_to_representative
+
+
 def _group_places(client: anthropic.Anthropic, raw_places: list) -> dict:
     """raw_places: distinct raw place strings. Returns {raw: canonical_name},
     case-insensitive on the input side (matching is done by exact string
@@ -276,9 +330,17 @@ def run(permalink: str = None, post_id: str = None, out_dir: str = ".") -> int:
     )
 
     distinct_raw = sorted({p for places in extracted.values() for p in places})
-    log.info("Extracted %d place mention(s) across %d distinct raw name(s). Normalizing...",
-              sum(len(p) for p in extracted.values()), len(distinct_raw))
-    raw_to_canonical = _group_places(anthropic_client, distinct_raw)
+    raw_to_mechanical_rep = _mechanical_precluster(distinct_raw)
+    distinct_representatives = sorted(set(raw_to_mechanical_rep.values()))
+    log.info(
+        "Extracted %d place mention(s) across %d distinct raw name(s), %d after merging "
+        "@handle/plain-name duplicates. Normalizing remaining spelling variants...",
+        sum(len(p) for p in extracted.values()), len(distinct_raw), len(distinct_representatives),
+    )
+    representative_to_canonical = _group_places(anthropic_client, distinct_representatives)
+    raw_to_canonical = {
+        raw: representative_to_canonical.get(rep, rep) for raw, rep in raw_to_mechanical_rep.items()
+    }
 
     out_path = Path(out_dir).expanduser()
     out_path.mkdir(parents=True, exist_ok=True)
