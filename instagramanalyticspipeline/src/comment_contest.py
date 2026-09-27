@@ -30,11 +30,24 @@ asked of the model, same discipline as vision.py's demographics
 percentages and hook_insights.py's style-pattern averages elsewhere in
 this codebase.
 
+Optionally also pulls comments from a cross-posted Facebook video of the
+same content (--facebook-permalink / --facebook-video-id) and folds them
+into the same extraction/grouping/tally pass, so a place mentioned on
+one platform and spelled differently on the other still ends up counted
+as one place. Facebook's own Page video permalink embeds its numeric
+video ID directly in the URL (unlike Instagram's opaque shortcode), so
+this needs no separate Facebook credentials or BigQuery lookup -- it
+reuses the same META_ACCESS_TOKEN already loaded for Instagram, since
+both pipelines share that same Meta App/System User token (see
+facebookpipeline/src/config.py's docstring).
+
 Requires ANTHROPIC_API_KEY in .env (already used by hook_analysis.py).
 
 Run:
   python -m src.comment_contest --permalink https://www.instagram.com/p/SHORTCODE/
   python -m src.comment_contest --post-id 17851234567890123 --out-dir ~/Desktop
+  python -m src.comment_contest --permalink https://www.instagram.com/p/SHORTCODE/ \\
+      --facebook-permalink https://www.facebook.com/PageName/videos/1234567890123456/
 """
 import argparse
 import csv
@@ -42,10 +55,12 @@ import json
 import logging
 import re
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
 import anthropic
+import requests
 from google.cloud import bigquery
 
 from . import bigquery_store, config
@@ -173,6 +188,64 @@ def _resolve_post_id(bq_client, permalink: str) -> str:
     return rows[0]["Post_ID"]
 
 
+_FACEBOOK_COMMENT_FIELDS = "id,message,from,created_time,like_count"
+_FACEBOOK_MAX_RETRIES = 5
+_FACEBOOK_INITIAL_BACKOFF_SECONDS = 2
+
+
+def _extract_facebook_video_id(permalink: str) -> str:
+    """A Page video's permalink_url embeds its numeric video ID directly
+    (either /videos/<id>/ or ?v=<id>) -- unlike Instagram's opaque
+    shortcode, no BigQuery lookup is needed to resolve it."""
+    m = re.search(r"/videos/(\d+)", permalink) or re.search(r"[?&]v=(\d+)", permalink)
+    if not m:
+        raise ValueError(
+            f"Couldn't find a numeric video ID in: {permalink}. This needs the canonical "
+            f"facebook.com/.../videos/<id>/ (or ?v=<id>) link, not a shortened fb.watch one "
+            f"-- or pass --facebook-video-id directly if you already have the raw ID."
+        )
+    return m.group(1)
+
+
+def get_all_facebook_comments(access_token: str, video_id: str, base_url: str) -> list:
+    """Every top-level comment on one Facebook Page video, via the same
+    /{id}/comments edge and paging.next cursor pattern used everywhere
+    else in this codebase's Graph API clients. Kept minimal/self-
+    contained here rather than importing facebookpipeline's client --
+    this only needs the one shared access token (see this module's
+    docstring), not a second .env or Page ID."""
+    next_url = f"{base_url}/{video_id}/comments"
+    next_params = {"fields": _FACEBOOK_COMMENT_FIELDS, "limit": 100, "access_token": access_token}
+    items = []
+    while next_url:
+        for attempt in range(1, _FACEBOOK_MAX_RETRIES + 1):
+            resp = requests.get(next_url, params=next_params, timeout=30)
+            payload = resp.json() if resp.content else {}
+            error = payload.get("error") if isinstance(payload, dict) else None
+            if error is None and resp.ok:
+                break
+            code = error.get("code") if error else None
+            message = error.get("message") if error else f"HTTP {resp.status_code}"
+            if code == 190:
+                raise RuntimeError(f"Facebook access token invalid/expired: {message}")
+            retryable = resp.status_code == 429 or resp.status_code >= 500
+            if not retryable or attempt >= _FACEBOOK_MAX_RETRIES:
+                raise RuntimeError(f"Facebook comments request failed: {message}")
+            backoff = _FACEBOOK_INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+            log.warning("Facebook comments request failed (attempt %d/%d): %s -- retrying in %ds",
+                        attempt, _FACEBOOK_MAX_RETRIES, message, backoff)
+            time.sleep(backoff)
+        else:
+            raise RuntimeError("Exhausted retries fetching Facebook comments")
+
+        items.extend(payload.get("data", []))
+        next_url = payload.get("paging", {}).get("next")
+        next_params = None
+
+    log.info("Fetched %d Facebook comment(s) for video %s", len(items), video_id)
+    return items
+
+
 def _chunks(items: list, size: int):
     for i in range(0, len(items), size):
         yield items[i : i + size]
@@ -296,7 +369,13 @@ def _group_places(client: anthropic.Anthropic, raw_places: list) -> dict:
     return mapping
 
 
-def run(permalink: str = None, post_id: str = None, out_dir: str = ".") -> int:
+def run(
+    permalink: str = None,
+    post_id: str = None,
+    facebook_permalink: str = None,
+    facebook_video_id: str = None,
+    out_dir: str = ".",
+) -> int:
     if not config.ANTHROPIC_API_KEY:
         log.error("Fatal: ANTHROPIC_API_KEY is not set (see .env.example).")
         return 1
@@ -315,18 +394,39 @@ def run(permalink: str = None, post_id: str = None, out_dir: str = ".") -> int:
         log.error("Fatal: %s", e)
         return 1
 
-    log.info("Fetching comments for Post_ID=%s ...", resolved_post_id)
-    comments = list(graph_client.get_all_comments(resolved_post_id))
+    log.info("Fetching Instagram comments for Post_ID=%s ...", resolved_post_id)
+    ig_comments = list(graph_client.get_all_comments(resolved_post_id))
+    log.info("Fetched %d Instagram comment(s).", len(ig_comments))
+
+    comments = [
+        {"id": f"IG:{c['id']}", "text": c.get("text", ""), "username": c.get("username", ""), "platform": "Instagram"}
+        for c in ig_comments
+    ]
+
+    if facebook_permalink or facebook_video_id:
+        resolved_fb_video_id = facebook_video_id or _extract_facebook_video_id(facebook_permalink)
+        log.info("Fetching Facebook comments for video %s ...", resolved_fb_video_id)
+        fb_comments = get_all_facebook_comments(config.META_ACCESS_TOKEN, resolved_fb_video_id, config.GRAPH_BASE_URL)
+        comments.extend(
+            {
+                "id": f"FB:{c['id']}",
+                "text": c.get("message", ""),
+                "username": (c.get("from") or {}).get("name", ""),
+                "platform": "Facebook",
+            }
+            for c in fb_comments
+        )
+
     if not comments:
-        log.warning("No comments found on this post -- nothing to do.")
+        log.warning("No comments found -- nothing to do.")
         return 0
-    log.info("Fetched %d comment(s).", len(comments))
+    log.info("%d comment(s) total across both platforms.", len(comments))
 
     anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
     comment_lookup = {c["id"]: c for c in comments}
     extracted = _extract_places(
-        anthropic_client, [{"id": c["id"], "text": c.get("text", "")} for c in comments]
+        anthropic_client, [{"id": c["id"], "text": c["text"]} for c in comments]
     )
 
     distinct_raw = sorted({p for places in extracted.values() for p in places})
@@ -349,6 +449,7 @@ def run(permalink: str = None, post_id: str = None, out_dir: str = ".") -> int:
     vote_rows = []
     no_place_rows = []
     vote_counts = defaultdict(int)
+    vote_counts_by_platform = defaultdict(lambda: defaultdict(int))
     vote_examples = defaultdict(set)
 
     for comment_id, places in extracted.items():
@@ -356,6 +457,7 @@ def run(permalink: str = None, post_id: str = None, out_dir: str = ".") -> int:
         if not places:
             no_place_rows.append({
                 "Comment_ID": comment_id,
+                "Platform": c.get("platform", ""),
                 "Username": c.get("username", ""),
                 "Comment_Text": c.get("text", ""),
             })
@@ -364,18 +466,21 @@ def run(permalink: str = None, post_id: str = None, out_dir: str = ".") -> int:
             canonical = raw_to_canonical.get(raw_place, raw_place)
             vote_rows.append({
                 "Comment_ID": comment_id,
+                "Platform": c.get("platform", ""),
                 "Username": c.get("username", ""),
                 "Comment_Text": c.get("text", ""),
                 "Extracted_Place_Raw": raw_place,
                 "Canonical_Place": canonical,
             })
             vote_counts[canonical] += 1
+            vote_counts_by_platform[canonical][c.get("platform", "")] += 1
             vote_examples[canonical].add(raw_place)
 
     raw_votes_path = out_path / f"{slug}_raw_votes.csv"
     with open(raw_votes_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["Comment_ID", "Username", "Comment_Text", "Extracted_Place_Raw", "Canonical_Place"]
+            f,
+            fieldnames=["Comment_ID", "Platform", "Username", "Comment_Text", "Extracted_Place_Raw", "Canonical_Place"],
         )
         writer.writeheader()
         writer.writerows(vote_rows)
@@ -383,19 +488,23 @@ def run(permalink: str = None, post_id: str = None, out_dir: str = ".") -> int:
     summary_path = out_path / f"{slug}_summary.csv"
     ranked = sorted(vote_counts.items(), key=lambda kv: -kv[1])
     with open(summary_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["Rank", "Place", "Votes", "Raw_Spelling_Variants"])
+        writer = csv.DictWriter(
+            f, fieldnames=["Rank", "Place", "Votes", "Instagram_Votes", "Facebook_Votes", "Raw_Spelling_Variants"]
+        )
         writer.writeheader()
         for rank, (place, count) in enumerate(ranked, start=1):
             writer.writerow({
                 "Rank": rank,
                 "Place": place,
                 "Votes": count,
+                "Instagram_Votes": vote_counts_by_platform[place].get("Instagram", 0),
+                "Facebook_Votes": vote_counts_by_platform[place].get("Facebook", 0),
                 "Raw_Spelling_Variants": " | ".join(sorted(vote_examples[place])),
             })
 
     no_place_path = out_path / f"{slug}_no_place_mentioned.csv"
     with open(no_place_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["Comment_ID", "Username", "Comment_Text"])
+        writer = csv.DictWriter(f, fieldnames=["Comment_ID", "Platform", "Username", "Comment_Text"])
         writer.writeheader()
         writer.writerows(no_place_rows)
 
@@ -413,6 +522,20 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--permalink", help="The post's Instagram URL, e.g. https://www.instagram.com/p/SHORTCODE/")
     group.add_argument("--post-id", help="The post's Post_ID directly (skips the permalink lookup).")
+    fb_group = parser.add_mutually_exclusive_group()
+    fb_group.add_argument(
+        "--facebook-permalink",
+        help="Optional: the same content's cross-posted Facebook video URL, e.g. "
+        "https://www.facebook.com/PageName/videos/1234567890123456/ -- its comments get folded "
+        "into the same tally.",
+    )
+    fb_group.add_argument("--facebook-video-id", help="The Facebook video's numeric ID directly.")
     parser.add_argument("--out-dir", default=".", help="Directory to write the CSV files into.")
     args = parser.parse_args()
-    sys.exit(run(permalink=args.permalink, post_id=args.post_id, out_dir=args.out_dir))
+    sys.exit(run(
+        permalink=args.permalink,
+        post_id=args.post_id,
+        facebook_permalink=args.facebook_permalink,
+        facebook_video_id=args.facebook_video_id,
+        out_dir=args.out_dir,
+    ))
