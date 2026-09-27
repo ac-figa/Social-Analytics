@@ -31,6 +31,8 @@ MEDIA_DETAIL_FIELDS = (
     "media_audio_type,shortcode"
 )
 
+COMMENT_FIELDS = "id,text,username,timestamp,like_count"
+
 # Reels get the full Reels-specific metric set. Other media types (feed
 # video/image/carousel) only get the metrics documented as broadly
 # supported, to avoid a single unsupported metric failing the whole call
@@ -350,6 +352,48 @@ class InstagramGraphClient:
         except GraphAPIError as e:
             log.debug("No collaborator data for Post_ID=%s: %s", media_id, e)
             return []
+
+    # ---------------------------------------------------------------- #
+    # Comments (for a single post -- comment-contest style analysis)
+    # ---------------------------------------------------------------- #
+    def get_all_comments(self, media_id: str) -> Iterator[dict]:
+        """Yields {"id", "text", "username", "timestamp", "like_count"}
+        for every top-level comment on one media item, following
+        pagination cursors. Does not include replies (Instagram nests
+        those under each top-level comment's own /replies edge) -- fine
+        for a "comment your answer" giveaway post, where the answers are
+        the top-level comments themselves."""
+        relative_url = f"{media_id}/comments"
+        params = {"fields": COMMENT_FIELDS, "limit": 100}
+        url = f"{self.base_url}/{relative_url}"
+        next_url = url
+        next_params = params
+        seen = 0
+        while next_url:
+            for attempt in range(1, MAX_RETRIES + 1):
+                resp = self.session.get(
+                    next_url,
+                    params={**next_params, "access_token": self.access_token}
+                    if next_params
+                    else None,
+                    timeout=30,
+                )
+                payload = _safe_json(resp)
+                error = payload.get("error") if isinstance(payload, dict) else None
+                if error is None and resp.ok:
+                    break
+                _raise_or_backoff(error, resp.status_code, attempt, post_id=media_id)
+            else:
+                raise GraphAPIError("Exhausted retries listing comments", post_id=media_id)
+
+            for item in payload.get("data", []):
+                seen += 1
+                yield item
+
+            next_url = payload.get("paging", {}).get("next")
+            next_params = None
+
+        log.info("Listed %d comments for media %s", seen, media_id)
 
 
 # ---------------------------------------------------------------------- #
