@@ -195,14 +195,18 @@ _FACEBOOK_INITIAL_BACKOFF_SECONDS = 2
 
 def _extract_facebook_video_id(permalink: str) -> str:
     """A Page video's permalink_url embeds its numeric video ID directly
-    (either /videos/<id>/ or ?v=<id>) -- unlike Instagram's opaque
+    (/videos/<id>/, /reel/<id>/, or ?v=<id>) -- unlike Instagram's opaque
     shortcode, no BigQuery lookup is needed to resolve it."""
-    m = re.search(r"/videos/(\d+)", permalink) or re.search(r"[?&]v=(\d+)", permalink)
+    m = (
+        re.search(r"/videos/(\d+)", permalink)
+        or re.search(r"/reel/(\d+)", permalink)
+        or re.search(r"[?&]v=(\d+)", permalink)
+    )
     if not m:
         raise ValueError(
             f"Couldn't find a numeric video ID in: {permalink}. This needs the canonical "
-            f"facebook.com/.../videos/<id>/ (or ?v=<id>) link, not a shortened fb.watch one "
-            f"-- or pass --facebook-video-id directly if you already have the raw ID."
+            f"facebook.com/.../videos/<id>/, /reel/<id>/, or ?v=<id> link, not a shortened "
+            f"fb.watch one -- or pass --facebook-video-id directly if you already have the raw ID."
         )
     return m.group(1)
 
