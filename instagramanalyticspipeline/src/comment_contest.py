@@ -31,15 +31,22 @@ percentages and hook_insights.py's style-pattern averages elsewhere in
 this codebase.
 
 Optionally also pulls comments from a cross-posted Facebook video of the
-same content (--facebook-permalink / --facebook-video-id) and folds them
-into the same extraction/grouping/tally pass, so a place mentioned on
-one platform and spelled differently on the other still ends up counted
-as one place. Facebook's own Page video permalink embeds its numeric
-video ID directly in the URL (unlike Instagram's opaque shortcode), so
-this needs no separate Facebook credentials or BigQuery lookup -- it
-reuses the same META_ACCESS_TOKEN already loaded for Instagram, since
-both pipelines share that same Meta App/System User token (see
-facebookpipeline/src/config.py's docstring).
+same content (--facebook-permalink / --facebook-video-id, plus
+--facebook-page-id or FB_PAGE_ID in the environment) and folds them into
+the same extraction/grouping/tally pass, so a place mentioned on one
+platform and spelled differently on the other still ends up counted as
+one place. Facebook's own Page video permalink embeds its numeric video
+ID directly in the URL (unlike Instagram's opaque shortcode), so this
+needs no separate Facebook credentials -- it reuses the same
+META_ACCESS_TOKEN already loaded for Instagram, since both pipelines
+share that same Meta App/System User token (see facebookpipeline/src/
+config.py's docstring). That System User token can't call Facebook's
+comments edge directly though (confirmed live: "(#190) A Page access
+token is required for this call for the new Pages experience") -- this
+module exchanges it for a Page Access Token first (the same exchange
+facebookpipeline/src/graph_client.py's get_page_info() already does for
+the regular pipeline), which needs the Page's numeric ID to exchange
+against.
 
 Requires ANTHROPIC_API_KEY in .env (already used by hook_analysis.py).
 
@@ -47,12 +54,14 @@ Run:
   python -m src.comment_contest --permalink https://www.instagram.com/p/SHORTCODE/
   python -m src.comment_contest --post-id 17851234567890123 --out-dir ~/Desktop
   python -m src.comment_contest --permalink https://www.instagram.com/p/SHORTCODE/ \\
-      --facebook-permalink https://www.facebook.com/PageName/videos/1234567890123456/
+      --facebook-permalink https://www.facebook.com/PageName/videos/1234567890123456/ \\
+      --facebook-page-id 101391975269001
 """
 import argparse
 import csv
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -209,6 +218,29 @@ def _extract_facebook_video_id(permalink: str) -> str:
             f"fb.watch one -- or pass --facebook-video-id directly if you already have the raw ID."
         )
     return m.group(1)
+
+
+def _get_facebook_page_token(access_token: str, page_id: str, base_url: str) -> str:
+    """Exchanges the System User token for a Page Access Token --
+    confirmed live (Sep 2026) that Facebook's comments edge rejects the
+    System User token directly (code 190, "A Page access token is
+    required for this call for the new Pages experience"), even though
+    that same token authenticates every other call in this script fine.
+    This exact exchange is already documented and done in
+    facebookpipeline/src/graph_client.py's get_page_info() for the
+    regular pipeline -- reproduced here rather than imported, to keep
+    this script not needing facebookpipeline's own package/config."""
+    resp = requests.get(
+        f"{base_url}/{page_id}", params={"fields": "access_token", "access_token": access_token}, timeout=30
+    )
+    payload = resp.json() if resp.content else {}
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if error or not resp.ok:
+        raise RuntimeError(f"Couldn't exchange for a Facebook Page access token: {error or resp.text}")
+    page_token = payload.get("access_token")
+    if not page_token:
+        raise RuntimeError(f"Page {page_id} did not return an access_token -- check FB_PAGE_ID is correct.")
+    return page_token
 
 
 def get_all_facebook_comments(access_token: str, video_id: str, base_url: str) -> list:
@@ -378,6 +410,7 @@ def run(
     post_id: str = None,
     facebook_permalink: str = None,
     facebook_video_id: str = None,
+    facebook_page_id: str = None,
     out_dir: str = ".",
 ) -> int:
     if not config.ANTHROPIC_API_KEY:
@@ -408,9 +441,19 @@ def run(
     ]
 
     if facebook_permalink or facebook_video_id:
+        resolved_fb_page_id = facebook_page_id or os.environ.get("FB_PAGE_ID")
+        if not resolved_fb_page_id:
+            log.error(
+                "Fatal: --facebook-page-id wasn't given and FB_PAGE_ID isn't set in the "
+                "environment -- comments need a Page Access Token, which requires the Page ID "
+                "to exchange for (see facebookpipeline/.env for the value already in use there)."
+            )
+            return 1
         resolved_fb_video_id = facebook_video_id or _extract_facebook_video_id(facebook_permalink)
+        log.info("Exchanging for a Facebook Page access token (Page %s) ...", resolved_fb_page_id)
+        fb_page_token = _get_facebook_page_token(config.META_ACCESS_TOKEN, resolved_fb_page_id, config.GRAPH_BASE_URL)
         log.info("Fetching Facebook comments for video %s ...", resolved_fb_video_id)
-        fb_comments = get_all_facebook_comments(config.META_ACCESS_TOKEN, resolved_fb_video_id, config.GRAPH_BASE_URL)
+        fb_comments = get_all_facebook_comments(fb_page_token, resolved_fb_video_id, config.GRAPH_BASE_URL)
         comments.extend(
             {
                 "id": f"FB:{c['id']}",
@@ -534,6 +577,12 @@ if __name__ == "__main__":
         "into the same tally.",
     )
     fb_group.add_argument("--facebook-video-id", help="The Facebook video's numeric ID directly.")
+    parser.add_argument(
+        "--facebook-page-id",
+        help="The Facebook Page's numeric ID -- required alongside --facebook-permalink/"
+        "--facebook-video-id, to exchange for the Page access token comments need. Falls back "
+        "to the FB_PAGE_ID environment variable if not given (see facebookpipeline/.env).",
+    )
     parser.add_argument("--out-dir", default=".", help="Directory to write the CSV files into.")
     args = parser.parse_args()
     sys.exit(run(
@@ -541,5 +590,6 @@ if __name__ == "__main__":
         post_id=args.post_id,
         facebook_permalink=args.facebook_permalink,
         facebook_video_id=args.facebook_video_id,
+        facebook_page_id=args.facebook_page_id,
         out_dir=args.out_dir,
     ))
