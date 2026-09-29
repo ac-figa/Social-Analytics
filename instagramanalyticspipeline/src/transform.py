@@ -25,6 +25,19 @@ def _normalize_timestamp(raw: str):
         return raw  # unexpected format -- pass through rather than drop the row
 
 
+def _normalize_permalink(raw: str):
+    """Meta's own `permalink` field sometimes gives a Reel's /reel/<code>/
+    form, which confirmed live (Sep 2026, a real viral post) can resolve
+    to a completely unrelated video -- a known Instagram platform quirk
+    in how Reels shortcodes route, not something wrong with the shortcode
+    itself. /p/<code>/ resolves the exact same shortcode correctly for
+    both regular posts and Reels, so every permalink is normalized to
+    that form rather than trusting /reel/ to be reliable."""
+    if not raw:
+        return raw
+    return raw.replace("/reel/", "/p/", 1)
+
+
 def parse_timestamp(raw: str):
     """Parses an IG timestamp into a timezone-aware datetime, or None if
     missing/unparseable. Used by pipeline.py to decide whether a post
@@ -90,7 +103,7 @@ def build_master_row(
         "Description": media_detail.get("caption"),  # None if caption empty
         "Duration": None,  # not exposed by the Graph API -- see docs/API_NOTES.md
         "Publish_Date": _normalize_timestamp(media_detail.get("timestamp")),
-        "Permalink": media_detail.get("permalink"),
+        "Permalink": _normalize_permalink(media_detail.get("permalink")),
         "Post_Type": _post_type(
             media_detail.get("media_type"), media_detail.get("media_product_type")
         ),
